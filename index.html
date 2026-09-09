@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>服务器报价助手</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+  <!-- 登录 -->
+  <div id="login-view" class="login-wrap hidden">
+    <div class="login-card">
+      <div class="login-logo">🛠️</div>
+      <h1>服务器报价助手</h1>
+      <p class="login-sub">浪潮服务器智能选配与报价</p>
+      <input id="login-user" autocomplete="username" placeholder="账号">
+      <input id="login-pass" type="password" autocomplete="current-password" placeholder="密码">
+      <button id="login-btn">登 录</button>
+      <div id="login-err" class="err"></div>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="app-view" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-title">🛠️ 服务器报价助手</div>
+      <button id="new-chat" class="new-chat-btn">＋ 新建报价</button>
+      <button id="btn-prices" class="side-btn price-entry">📋 配件价格表</button>
+      <div class="side-label">历史报价</div>
+      <div id="history-list" class="history-list"></div>
+      <div class="side-footer">
+        <div id="whoami" class="whoami"></div>
+        <button id="btn-change-pass" class="side-btn">修改密码</button>
+        <button id="btn-admin" class="side-btn hidden">账号管理</button>
+        <button id="btn-logout" class="side-btn">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="chat-main">
+      <!-- 对话页 -->
+      <div id="chat-page" class="chat-page">
+        <div id="messages" class="messages"></div>
+        <div class="input-bar">
+          <textarea id="input" rows="1" placeholder="输入需求，Enter 发送 / Shift+Enter 换行&#10;"></textarea>
+          <button id="send">发送</button>
+        </div>
+      </div>
+      <!-- 配件价格表页 -->
+      <div id="price-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="price-tabs" class="price-tabs"></div>
+          <input id="price-search" class="price-search" placeholder="搜索：型号 / 容量 / 接口 等关键词">
+        </div>
+        <div id="price-content" class="price-content"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 弹窗 -->
+  <div id="modal-mask" class="modal-mask hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="modal-title"></span>
+        <button id="modal-close">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
