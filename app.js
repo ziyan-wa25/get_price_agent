@@ -623,6 +623,106 @@
     await loadPriceData();
   }
 
+  // 管理员配件增删改（持久生效）：LLM 报价、价格表、校验统一使用生效目录
+  function openItemModal(machineId, item) {
+    const isEdit = !!item;
+    openModal(isEdit ? '编辑配件' : '新增配件');
+    const body = $('#modal-body');
+    const hint = el('div', 'modal-hint',
+      '名称与参数说明要写清楚（型号/规格/容量/接口等），AI 报价按这里的内容理解并选用配件，无需改任何提示词。');
+    body.appendChild(hint);
+
+    const mkField = (labelText, input) => {
+      const row = el('div', 'form-row item-field');
+      const lab = el('label', '', labelText);
+      row.appendChild(lab);
+      row.appendChild(input);
+      return row;
+    };
+
+    const inName = el('input', 'edit-input wide');
+    inName.type = 'text';
+    inName.value = isEdit ? item.name : '';
+    inName.placeholder = '如：64GB DDR5 RDIMM 5600';
+
+    const selCat = el('select', 'edit-input wide');
+    const cats = CAT_ORDER.slice();
+    if (isEdit && item.category && cats.indexOf(item.category) === -1) cats.push(item.category);
+    cats.forEach((c) => {
+      const opt = el('option', '', CAT_LABELS[c] || c);
+      opt.value = c;
+      if ((isEdit ? item.category : 'other') === c) opt.selected = true;
+      selCat.appendChild(opt);
+    });
+
+    const inPrice = el('input', 'edit-input wide');
+    inPrice.type = 'number';
+    inPrice.min = '0';
+    inPrice.value = isEdit && item.price !== null && item.price !== undefined ? String(item.price) : '';
+    inPrice.placeholder = '单价（元）';
+
+    const inNote = el('textarea', 'edit-input wide');
+    inNote.rows = 3;
+    inNote.placeholder = '参数说明：内存条数/频率、盘位接口、电源瓦数、槽位宽度等，AI 据此判断兼容与规则';
+    inNote.value = isEdit ? (item.note || '') : '';
+
+    const inAttrs = el('textarea', 'edit-input wide');
+    inAttrs.rows = 2;
+    inAttrs.placeholder = '附加参数 JSON（可选），如 {"capacityGB":64}';
+    inAttrs.value = isEdit && item.attrs ? JSON.stringify(item.attrs) : '';
+
+    body.appendChild(mkField('名称', inName));
+    body.appendChild(mkField('分类', selCat));
+    body.appendChild(mkField('单价', inPrice));
+    body.appendChild(mkField('参数说明', inNote));
+    body.appendChild(mkField('附加参数', inAttrs));
+
+    const row = el('div', 'form-row');
+    const ok = el('button', 'btn-edit ok', '保存');
+    const cancel = el('button', 'btn-edit', '取消');
+    row.appendChild(ok);
+    row.appendChild(document.createTextNode(' '));
+    row.appendChild(cancel);
+    body.appendChild(row);
+
+    cancel.onclick = closeModal;
+    ok.onclick = async () => {
+      let attrs = null;
+      const attrsRaw = inAttrs.value.trim();
+      if (attrsRaw) {
+        try { attrs = JSON.parse(attrsRaw); } catch (e) { alert('附加参数不是合法 JSON'); return; }
+      }
+      const payload = {
+        machine: machineId,
+        oldName: isEdit ? item.name : undefined,
+        item: {
+          name: inName.value,
+          category: selCat.value,
+          price: inPrice.value,
+          note: inNote.value,
+          attrs,
+        },
+      };
+      try {
+        await api('POST', '/api/catalog-item', payload);
+        closeModal();
+        await loadPriceData();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  }
+
+  async function deleteCatalogItem(machineId, item) {
+    if (!confirm('删除配件「' + item.name + '」？删除立即生效并同步给所有用户（AI 也不再选用它）。')) return;
+    try {
+      await api('DELETE', '/api/catalog-item/' + encodeURIComponent(machineId) + '/' + encodeURIComponent(item.name));
+      await loadPriceData();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   function renderPriceTable() {
     const box = $('#price-content');
     box.innerHTML = '';
@@ -632,7 +732,12 @@
 
     if (isAdmin) {
       box.appendChild(el('div', 'price-banner admin',
-        '管理员改价：点「改价」修改单价，改价即彻底改、持久生效（价格表与报价同步使用新价）。'));
+        '管理员模式：可改价，也可新增/编辑/删除配件，全部立即生效、云端持久保存并同步给所有用户（AI 报价同步使用）。'));
+      const toolbar = el('div', 'price-toolbar');
+      const addBtn = el('button', 'btn-edit ok', '+ 新增配件');
+      addBtn.onclick = () => openItemModal(m.id, null);
+      toolbar.appendChild(addBtn);
+      box.appendChild(toolbar);
     }
 
     const kw = priceKeyword.trim().toLowerCase();
@@ -707,7 +812,15 @@
           } else {
             const btn = el('button', 'btn-edit', '改价');
             btn.onclick = () => { priceEdit = { name: i.name, value: String(i.price) }; renderPriceTable(); };
+            const editBtn = el('button', 'btn-edit', '编辑');
+            editBtn.onclick = () => openItemModal(m.id, i);
+            const delBtn = el('button', 'btn-edit danger', '删除');
+            delBtn.onclick = () => deleteCatalogItem(m.id, i);
             tdOp.appendChild(btn);
+            tdOp.appendChild(document.createTextNode(' '));
+            tdOp.appendChild(editBtn);
+            tdOp.appendChild(document.createTextNode(' '));
+            tdOp.appendChild(delBtn);
           }
           tr.appendChild(tdOp);
         }

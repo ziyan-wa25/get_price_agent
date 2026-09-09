@@ -225,6 +225,18 @@ input, textarea { font-family: inherit; outline: none; }
 }
 .user-row .u-del:disabled { opacity: .4; }
 .modal-hint { color: #888; font-size: 12px; margin-top: 8px; }
+
+/* 配件增删改：价格表工具条 + 编辑弹窗表单 */
+.price-toolbar { margin: 10px 0; }
+.item-field label {
+  width: 64px; flex: none; align-self: flex-start;
+  padding-top: 9px; font-size: 13px; color: #555;
+}
+.edit-input.wide { flex: 1; width: auto; padding: 8px 10px; border: 1px solid #d9dce1; border-radius: 8px; font-size: 14px; font-family: inherit; }
+textarea.edit-input.wide { resize: vertical; line-height: 1.5; }
+select.edit-input.wide { background: #fff; }
+.btn-edit.danger { border-color: #f0c1c1; background: #fff5f5; color: #d93025; }
+.btn-edit.danger:hover { background: #ffe9e7; }
 .modal-pre {
   font-family: Consolas, Menlo, monospace; font-size: 13px; line-height: 1.7;
   white-space: pre-wrap; word-break: break-word;
