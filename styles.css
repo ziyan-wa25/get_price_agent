@@ -283,3 +283,40 @@ select.edit-input.wide { background: #fff; }
   background: #fff7e6; border: 1px solid #ffe0a3; border-radius: 8px; color: #8a6116;
 }
 .price-banner.admin { background: #eef3ff; border-color: #c9d6ff; color: #33518f; }
+
+/* ===== 配件增删改 / 批量编辑 / 批量导入 ===== */
+.item-field label {
+  width: 64px; flex: none; align-self: flex-start;
+  padding-top: 9px; font-size: 13px; color: #555;
+}
+.edit-input.wide { flex: 1; width: auto; padding: 8px 10px; border: 1px solid #d9dce1; border-radius: 8px; font-size: 14px; font-family: inherit; }
+textarea.edit-input.wide { resize: vertical; line-height: 1.5; }
+select.edit-input.wide { background: #fff; }
+.btn-edit.danger { border-color: #f0c1c1; background: #fff5f5; color: #d93025; }
+.btn-edit.danger:hover { background: #ffe9e7; }
+.batch-name { width: 100%; min-width: 160px; padding: 3px 6px; border: 1px solid #d9dce1; border-radius: 6px; font-size: 13px; }
+tr.batch-changed .batch-name, tr.batch-changed .edit-input { border-color: #4d6bfe; background: #f5f8ff; }
+
+/* 报价卡：配件名点击改 + 模糊搜索下拉 */
+.qc-name-editable { cursor: pointer; border-bottom: 1px dashed #b9c0cc; }
+.qc-name-editable:hover { color: #4d6bfe; }
+.fz-wrap { position: relative; }
+.fz-input { width: 100%; min-width: 180px; }
+.fz-list {
+  position: absolute; top: 100%; left: 0; z-index: 40;
+  background: #fff; border: 1px solid #d9dce1; border-radius: 8px;
+  min-width: 240px; max-height: 240px; overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+}
+.fz-item { padding: 6px 10px; font-size: 13px; cursor: pointer; }
+.fz-item:hover { background: #f3f4f6; }
+.fz-price { float: right; color: #888; }
+
+/* 批量导入勾选列表 */
+.imp-list {
+  max-height: 280px; overflow-y: auto;
+  border: 1px solid #e5e7eb; border-radius: 8px; margin: 8px 0;
+}
+.imp-row { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid #f0f1f3; font-size: 13px; }
+.imp-row:last-child { border-bottom: none; }
+.imp-row label { flex: 1; cursor: pointer; }
