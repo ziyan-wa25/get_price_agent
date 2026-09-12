@@ -1215,20 +1215,37 @@
     }
     function renderList() {
       list.innerHTML = '';
-      sourceItems().forEach((i) => {
-        const r = el('div', 'imp-row');
-        const cb = el('input');
-        cb.type = 'checkbox';
-        cb.checked = checked.has(i.name);
-        cb.onchange = () => {
-          if (cb.checked) checked.add(i.name); else checked.delete(i.name);
-          info.textContent = '已勾选 ' + checked.size + ' 项';
-        };
-        const lab = el('label', '', i.name);
-        r.appendChild(cb);
-        r.appendChild(lab);
-        r.appendChild(el('span', 'fz-price', '¥' + fmt(i.price)));
-        list.appendChild(r);
+      const items = sourceItems();
+      // 与价格表/总表一致：按配件分类分组（同一顺序），组内按名称字典序
+      const groups = [];
+      CAT_ORDER.forEach((cat) => {
+        const g = items.filter((i) => (i.category || 'other') === cat);
+        if (g.length) groups.push([CAT_LABELS[cat] || cat, g]);
+      });
+      items.filter((i) => CAT_ORDER.indexOf(i.category || 'other') === -1).forEach((i) => {
+        groups.push([i.category || 'other', [i]]);
+      });
+      if (!items.length) {
+        info.textContent = '没有匹配的配件，已勾选 ' + checked.size + ' 项';
+        return;
+      }
+      groups.forEach(([label, g]) => {
+        list.appendChild(el('div', 'imp-group', label));
+        g.forEach((i) => {
+          const r = el('div', 'imp-row');
+          const cb = el('input');
+          cb.type = 'checkbox';
+          cb.checked = checked.has(i.name);
+          cb.onchange = () => {
+            if (cb.checked) checked.add(i.name); else checked.delete(i.name);
+            info.textContent = '已勾选 ' + checked.size + ' 项';
+          };
+          const lab = el('label', '', i.name);
+          r.appendChild(cb);
+          r.appendChild(lab);
+          r.appendChild(el('span', 'fz-price', '¥' + fmt(i.price)));
+          list.appendChild(r);
+        });
       });
       info.textContent = '已勾选 ' + checked.size + ' 项';
     }
