@@ -320,3 +320,16 @@ tr.batch-changed .batch-name, tr.batch-changed .edit-input { border-color: #4d6b
 .imp-row { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid #f0f1f3; font-size: 13px; }
 .imp-row:last-child { border-bottom: none; }
 .imp-row label { flex: 1; cursor: pointer; }
+
+/* 新增配件按钮固定：价格表往下滚也一直可点 */
+.price-content .price-toolbar {
+  position: sticky; top: 0; z-index: 30;
+  background: #fff; padding: 10px 4px;
+  margin: 0 0 8px; border-bottom: 1px solid #eef0f2;
+}
+
+/* 模糊匹配下拉：无匹配时的提示行 */
+.fz-hint { padding: 6px 10px; font-size: 12px; color: #98a2b3; }
+
+/* 选型规则编辑 */
+.rules-ta { font-family: inherit; line-height: 1.6; }
