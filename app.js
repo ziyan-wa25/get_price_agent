@@ -244,7 +244,7 @@
 
     const head = el('div', 'qc-head');
     head.appendChild(el('span', 'qc-machine',
-      quote.machine + (quote.machineVariant ? '（' + quote.machineVariant + '）' : '')));
+      (quote.machineFamily || quote.machine) + (quote.machineVariant ? '（' + quote.machineVariant + '）' : '')));
     const total = el('span', 'qc-total', '合计：¥ ' + fmt(quote.total));
     total.dataset.role = 'total';
     head.appendChild(total);
@@ -392,30 +392,40 @@
     return it ? it.price : null;
   }
 
-  function startEditPrice(c, name) {
-    c.editing = { name, value: String(c.overrides[name] !== undefined ? c.overrides[name] : originalPrice(c, name)) };
+  // 单价/数量就地编辑：点击单元格直接进入输入状态（Enter/失焦保存，Esc 取消），目录件与手动件都支持
+  function startEditCell(c, row, field) {
+    c.nameEditing = null;
+    c.editing = { name: row.name, field, value: field === 'qty' ? String(row.qty) : String(row.price) };
     renderCardTable(c);
   }
 
-  function confirmEditPrice(c) {
+  function confirmEditCell(c) {
     if (!c.editing) return;
-    const name = c.editing.name;
-    const v = String(c.editing.value).trim();
-    const num = Number(v);
-    const orig = originalPrice(c, name);
-    if (v === '' || !isFinite(num) || num < 0) {
-      c.editing = null; // 非法输入视为取消
-    } else if (orig !== null && num === orig) {
-      delete c.overrides[name]; // 改回原价 = 取消改价
-      c.editing = null;
+    const e = c.editing;
+    c.editing = null; // 先清状态，防止 Enter 与失焦双重提交
+    const num = Number(String(e.value).trim());
+    const arr = c.quote.items || [];
+    const k = arr.findIndex((i) => i.name === e.name);
+    const isCatalog = k >= 0;
+    if (e.field === 'qty') {
+      const v = parseInt(e.value, 10);
+      if (!isFinite(v) || v < 1) { renderCardTable(c); return; } // 非法数量视为取消
+      if (isCatalog) arr[k].qty = v;
+      else if (c.manual[e.name]) c.manual[e.name].qty = v;
     } else {
-      c.overrides[name] = num;
-      c.editing = null;
+      if (e.value === '' || !isFinite(num) || num < 0) { renderCardTable(c); return; } // 非法价格视为取消
+      if (isCatalog) {
+        const orig = originalPrice(c, e.name);
+        if (orig !== null && num === orig) delete c.overrides[e.name]; // 改回原价 = 取消改价
+        else c.overrides[e.name] = num; // 仅本次报价生效，不改知识库价格
+      } else if (c.manual[e.name]) {
+        c.manual[e.name].price = num;
+      }
     }
     recomputeCard(c.id);
   }
 
-  function cancelEditPrice(c) {
+  function cancelEditCell(c) {
     c.editing = null;
     renderCardTable(c);
   }
@@ -477,10 +487,19 @@
       const renderList = () => {
         list.innerHTML = '';
         const sugs = c.adding.suggestions || [];
+        // 搜索不准时的两种出路：总表里有 → 浏览总表选一个；总表里没有 → 自定义加入
+        const addBtn = el('button', 'fz-add-custom', '➕ 把「' + (c.adding.name || '').trim() + '」按上方单价/数量加入本次报价');
+        addBtn.type = 'button';
+        addBtn.onmousedown = (e) => { e.preventDefault(); confirmAdd(c); };
+        const tpBtn = el('button', 'fz-add-custom', '📚 从总表中加入…（浏览总表全部配件）');
+        tpBtn.type = 'button';
+        tpBtn.onmousedown = (e) => { e.preventDefault(); openTotalPicker(c, 'add'); };
         if (!sugs.length) {
           if ((c.adding.name || '').trim()) {
             list.classList.remove('hidden');
-            list.appendChild(el('div', 'fz-hint', '未匹配到目录配件 — 按 Enter / 确定 保存为自定义配件'));
+            list.appendChild(el('div', 'fz-hint', '未匹配到目录配件：'));
+            list.appendChild(tpBtn);
+            list.appendChild(addBtn);
           } else {
             list.classList.add('hidden');
           }
@@ -493,6 +512,10 @@
           opt.onmousedown = (e) => { e.preventDefault(); pickAddSuggestion(c, s); };
           list.appendChild(opt);
         });
+        if ((c.adding.name || '').trim()) {
+          list.appendChild(tpBtn);
+          list.appendChild(addBtn);
+        }
       };
       inN.oninput = () => {
         c.adding.name = inN.value;
@@ -561,11 +584,20 @@
         const renderList = () => {
           list.innerHTML = '';
           const sugs = c.nameEditing.suggestions || [];
+          // 搜索不准时的两种出路：总表里有 → 浏览总表选一个替换；总表里没有 → 自定义替换
+          const addBtn = el('button', 'fz-add-custom', '➕ 用「' + (c.nameEditing.value || '').trim() + '」替换该配件（保留数量与改价）');
+          addBtn.type = 'button';
+          addBtn.onmousedown = (e) => { e.preventDefault(); commitCustomName(c, row.name, c.nameEditing.value); };
+          const tpBtn = el('button', 'fz-add-custom', '📚 从总表中选择替换…（浏览总表全部配件）');
+          tpBtn.type = 'button';
+          tpBtn.onmousedown = (e) => { e.preventDefault(); openTotalPicker(c, 'rename', row.name); };
           if (!sugs.length) {
             // 没有匹配：显示提示（按 Enter 保存自定义），不隐藏下拉
             if ((c.nameEditing.value || '').trim()) {
               list.classList.remove('hidden');
-              list.appendChild(el('div', 'fz-hint', '未匹配到目录配件 — 按 Enter 保存为自定义配件'));
+              list.appendChild(el('div', 'fz-hint', '未匹配到目录配件：'));
+              list.appendChild(tpBtn);
+              list.appendChild(addBtn);
             } else {
               list.classList.add('hidden');
             }
@@ -578,6 +610,10 @@
             opt.onmousedown = (e) => { e.preventDefault(); pickSuggestion(c, row.name, s); };
             list.appendChild(opt);
           });
+          if ((c.nameEditing.value || '').trim()) {
+            list.appendChild(tpBtn);
+            list.appendChild(addBtn);
+          }
         };
         input.oninput = () => {
           c.nameEditing.value = input.value;
@@ -618,25 +654,50 @@
       tr.appendChild(tdName);
 
       const tdPrice = el('td', 'num');
-      const isEditing = !!(c.editing && c.editing.name === row.name && !row.manual);
-      if (isEditing) {
+      const isEditing = !!(c.editing && c.editing.name === row.name);
+      if (isEditing && c.editing.field === 'price') {
         const input = el('input', 'edit-input');
         input.type = 'number';
         input.min = '0';
         input.value = c.editing.value;
         input.oninput = () => { c.editing.value = input.value; };
         input.onkeydown = (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); confirmEditPrice(c); }
-          if (e.key === 'Escape') { e.preventDefault(); cancelEditPrice(c); }
+          if (e.key === 'Enter') { e.preventDefault(); confirmEditCell(c); }
+          if (e.key === 'Escape') { e.preventDefault(); cancelEditCell(c); }
         };
+        input.onblur = () => confirmEditCell(c);
         tdPrice.appendChild(input);
         setTimeout(() => { input.focus(); input.select(); }, 0);
       } else {
-        tdPrice.appendChild(el('span', '', fmt(row.price)));
+        const pSpan = el('span', 'cell-edit', fmt(row.price));
+        pSpan.title = '点击修改单价（仅本次报价生效）';
+        pSpan.onclick = () => startEditCell(c, row, 'price');
+        tdPrice.appendChild(pSpan);
       }
       tr.appendChild(tdPrice);
 
-      tr.appendChild(el('td', 'num', '×' + row.qty));
+      const tdQty = el('td', 'num');
+      if (isEditing && c.editing.field === 'qty') {
+        const input = el('input', 'edit-input');
+        input.type = 'number';
+        input.min = '1';
+        input.value = c.editing.value;
+        input.oninput = () => { c.editing.value = input.value; };
+        input.onkeydown = (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); confirmEditCell(c); }
+          if (e.key === 'Escape') { e.preventDefault(); cancelEditCell(c); }
+        };
+        input.onblur = () => confirmEditCell(c);
+        tdQty.appendChild(input);
+        setTimeout(() => { input.focus(); input.select(); }, 0);
+      } else {
+        const qSpan = el('span', 'cell-edit', '×' + row.qty);
+        qSpan.title = '点击修改数量';
+        qSpan.onclick = () => startEditCell(c, row, 'qty');
+        tdQty.appendChild(qSpan);
+      }
+      tr.appendChild(tdQty);
+
       tr.appendChild(el('td', 'num', fmt(row.subtotal)));
 
       const tdOp = el('td', 'op-col');
@@ -646,16 +707,13 @@
         tdOp.appendChild(cancel);
       } else if (isEditing) {
         const ok = el('button', 'btn-edit ok', '确定');
-        ok.onclick = () => confirmEditPrice(c);
+        ok.onclick = () => confirmEditCell(c);
         const cancel = el('button', 'btn-edit', '取消');
-        cancel.onclick = () => cancelEditPrice(c);
+        cancel.onclick = () => cancelEditCell(c);
         tdOp.appendChild(ok);
         tdOp.appendChild(document.createTextNode(' '));
         tdOp.appendChild(cancel);
       } else if (!row.manual) {
-        const btn = el('button', 'btn-edit', '改价');
-        btn.title = '仅修改本次报价，不改知识库价格';
-        btn.onclick = () => startEditPrice(c, row.name);
         const ins = el('button', 'btn-edit', '插入');
         ins.title = '在这行下面插入一个新配件';
         ins.onclick = () => {
@@ -664,8 +722,6 @@
         };
         const del = el('button', 'btn-edit danger', '删除');
         del.onclick = () => deleteCardRow(c, row);
-        tdOp.appendChild(btn);
-        tdOp.appendChild(document.createTextNode(' '));
         tdOp.appendChild(ins);
         tdOp.appendChild(document.createTextNode(' '));
         tdOp.appendChild(del);
@@ -726,6 +782,67 @@
     c.adding.price = String(s.price != null ? s.price : '');
     c.adding.picked = s;
     confirmAdd(c);
+  }
+
+  // 从总表选择配件加入本次报价（搜索不准但总表里有时用）：mode 'add'=新增一行 / 'rename'=替换某行
+  async function openTotalPicker(c, mode, oldName) {
+    if (!priceTotal || !priceTotal.length) await loadPriceData(); // 报价页可能还没加载过目录
+    openModal('从总表选择配件');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint',
+      mode === 'add'
+        ? '在总表中找到想要的配件，点一下即按总表价加入本次报价（不影响总表）。'
+        : '在总表中找到想要的配件，点一下即替换该配件（保留数量；本次改价失效）。'));
+    const inQ = el('input', 'edit-input wide');
+    inQ.type = 'text';
+    inQ.placeholder = '在总表中搜索（名称/简称/描述）';
+    const listBox = el('div', 'imp-list total-pick-list');
+    body.appendChild(inQ);
+    body.appendChild(listBox);
+    const renderL = () => {
+      listBox.innerHTML = '';
+      const kw = inQ.value.trim().toLowerCase();
+      const rows = priceTotal.filter((t) => !kw ||
+        ((t.name + ' ' + (t.short || '') + ' ' + (t.note || '')).toLowerCase().includes(kw)));
+      if (!rows.length) {
+        listBox.appendChild(el('div', 'modal-hint', '总表中没有匹配的配件——关闭本窗，用下拉里的「把输入内容加入本次报价」自定义。'));
+        return;
+      }
+      const groups = [];
+      CAT_ORDER.forEach((cat) => {
+        const list = rows.filter((t) => (t.category || 'other') === cat);
+        list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-Hans-CN'));
+        if (list.length) groups.push([CAT_LABELS[cat] || cat, list]);
+      });
+      rows.filter((t) => CAT_ORDER.indexOf(t.category || 'other') === -1).forEach((t) => {
+        groups.push([t.category || 'other', [t]]);
+      });
+      groups.forEach(([label, list]) => {
+        listBox.appendChild(el('div', 'imp-group', label));
+        list.forEach((t) => {
+          const r = el('div', 'imp-row total-pick-row');
+          const lab = el('label', '', t.name);
+          lab.onmousedown = (e) => { e.preventDefault(); pickTotal(c, mode, oldName, t); };
+          r.appendChild(lab);
+          r.appendChild(el('span', 'fz-price', t.price === null || t.price === undefined ? '—' : '¥' + fmt(t.price)));
+          listBox.appendChild(r);
+        });
+      });
+    };
+    inQ.oninput = () => renderL();
+    renderL();
+    setTimeout(() => { inQ.focus(); }, 0);
+  }
+
+  function pickTotal(c, mode, oldName, t) {
+    closeModal();
+    const s = { name: t.name, category: t.category || 'other', price: t.price == null ? 0 : t.price, note: t.note || '' };
+    if (mode === 'add') {
+      c.adding = c.adding || { name: '', qty: 1, price: '', picked: null, suggestions: [], timer: null, after: null };
+      pickAddSuggestion(c, s); // 按总表价加入本次报价（数量沿用输入行的数量）
+    } else {
+      pickSuggestion(c, oldName, s); // 替换该配件（保留数量）
+    }
   }
 
   function confirmAdd(c) {
@@ -879,7 +996,7 @@
       const dateStr = d.getMonth() + 1 + '-' + d.getDate() + ' ' +
         String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
       item.appendChild(el('div', 'hi-title',
-        (h.clientName ? '给「' + h.clientName + '」· ' : '') + (h.machine || '报价') + ' · ¥' + fmt(h.total)));
+        (h.clientName ? '给「' + h.clientName + '」· ' : '') + (h.machineName || h.machine || '报价') + ' · ¥' + fmt(h.total)));
       item.appendChild(el('div', 'hi-sub', dateStr));
       const del = el('button', 'hi-del', '✕');
       del.title = '删除这条历史报价';
@@ -1514,11 +1631,6 @@
         batchBtn.title = '直接在表格里一次改多个配件的名称和价格，也可勾选删除';
         batchBtn.onclick = () => { priceBatch = { edits: {}, deletions: new Set() }; renderPriceTable(); };
         toolbar.appendChild(batchBtn);
-        toolbar.appendChild(document.createTextNode(' '));
-        const syncBtn = el('button', 'btn-edit', '⇩ 同步所有机型配件进总表');
-        syncBtn.title = '把所有机型里有、总表里没有的配件加入总表（按名字去重）';
-        syncBtn.onclick = () => syncTotal();
-        toolbar.appendChild(syncBtn);
       } else {
         const saveBtn = el('button', 'btn-edit ok', '保存全部修改');
         saveBtn.onclick = () => saveBatchEdits(priceTotal, null);
@@ -1632,7 +1744,7 @@
     });
     tbl.appendChild(tbody);
     if (!shown) {
-      box.appendChild(el('div', 'modal-hint', '总表还没有配件：点「⇩ 同步所有机型配件进总表」或「+ 新增配件」'));
+      box.appendChild(el('div', 'modal-hint', '总表还没有配件：点「+ 新增配件」开始添加'));
       return;
     }
     box.appendChild(tbl);
@@ -1751,7 +1863,7 @@
   }
 
   function openHistoryModal(h) {
-    openModal((h.clientName ? '给「' + h.clientName + '」· ' : '') + (h.machine || '报价') + ' · 合计 ¥' + fmt(h.total));
+    openModal((h.clientName ? '给「' + h.clientName + '」· ' : '') + (h.machineName || h.machine || '报价') + ' · 合计 ¥' + fmt(h.total));
     const body = $('#modal-body');
     if (h.text) body.appendChild(el('div', 'qc-line', '需求：' + h.text));
     if (h.clientName) body.appendChild(el('div', 'qc-line', '客户：' + h.clientName));
