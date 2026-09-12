@@ -333,3 +333,7 @@ tr.batch-changed .batch-name, tr.batch-changed .edit-input { border-color: #4d6b
 
 /* 选型规则编辑 */
 .rules-ta { font-family: inherit; line-height: 1.6; }
+
+/* 报价表合计金额行 */
+.qc-total-row td { border-top: 2px solid #d9dce1; font-weight: 600; background: #fbfbfc; }
+.qc-total-num { color: #d93025; font-size: 14px; }

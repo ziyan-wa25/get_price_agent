@@ -281,16 +281,12 @@
     }
 
     const foot = el('div', 'qc-foot');
-    const bAdd = el('button', 'qc-btn', '＋ 加配件');
-    bAdd.title = 'AI 漏报时手动补一个配件：可搜索目录按目录价加，也可自定义名称手填价';
     const bCopyS = el('button', 'qc-btn', '复制简洁版');
     const bCopyD = el('button', 'qc-btn', '复制复杂版');
     const bSave = el('button', 'qc-btn primary', '保存到历史');
-    bAdd.onclick = () => { c.adding = { name: '', qty: 1, price: '', picked: null, suggestions: [], timer: null }; renderCardTable(c); };
     bCopyS.onclick = () => copyText(c.currentSimple, bCopyS);
     bCopyD.onclick = () => copyText(c.currentDetail, bCopyD);
     bSave.onclick = () => saveCard(id, bSave);
-    foot.appendChild(bAdd);
     foot.appendChild(bCopyS);
     foot.appendChild(bCopyD);
     foot.appendChild(bSave);
@@ -308,7 +304,7 @@
     return card;
   }
 
-  function buildDetailTable(items) {
+  function buildDetailTable(items, total) {
     const tbl = el('table');
     const thead = el('thead');
     const trh = el('tr');
@@ -327,6 +323,14 @@
       tr.appendChild(el('td', 'num', fmt(it.subtotal)));
       tbody.appendChild(tr);
     });
+    if (total !== null && total !== undefined) {
+      const trT = el('tr', 'qc-total-row');
+      const tdT = el('td', 'qc-total-label', '合计金额');
+      tdT.colSpan = 3;
+      trT.appendChild(tdT);
+      trT.appendChild(el('td', 'num qc-total-num', fmt(total)));
+      tbody.appendChild(trT);
+    }
     tbl.appendChild(tbody);
     return tbl;
   }
@@ -437,9 +441,10 @@
     recomputeCard(c.id);
   }
 
-  // 复杂版表格（可改价）：每行带「改价」按钮，仅影响本次报价
+  // 复杂版表格（可改价）：每行带「改价/插入/删除」，仅影响本次报价
   function buildEditableTable(c) {
     const rows = effectiveItems(c).concat(manualEntries(c));
+    const total = rows.reduce((s, i) => s + (i.subtotal || 0), 0);
     const tbl = el('table');
     const thead = el('thead');
     const trh = el('tr');
@@ -450,6 +455,91 @@
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
+
+    // 「插入配件」输入行：点某行的「插入」后显示在该行下方（可搜目录，也可自定义名称手填价）
+    let addRowPlaced = false;
+    const appendAddRow = () => {
+      addRowPlaced = true;
+      const tr = el('tr', 'add-row');
+      const tdN = el('td');
+      const wrap = el('div', 'fz-wrap');
+      const inN = el('input', 'edit-input fz-input');
+      inN.type = 'text';
+      inN.placeholder = '配件名：可搜索目录，也可自定义';
+      inN.value = c.adding.name;
+      const list = el('div', 'fz-list hidden');
+      const renderList = () => {
+        list.innerHTML = '';
+        const sugs = c.adding.suggestions || [];
+        if (!sugs.length) {
+          if ((c.adding.name || '').trim()) {
+            list.classList.remove('hidden');
+            list.appendChild(el('div', 'fz-hint', '未匹配到目录配件 — 按 Enter / 确定 保存为自定义配件'));
+          } else {
+            list.classList.add('hidden');
+          }
+          return;
+        }
+        list.classList.remove('hidden');
+        sugs.forEach((s) => {
+          const opt = el('div', 'fz-item', s.name);
+          opt.appendChild(el('span', 'fz-price', '¥' + fmt(s.price)));
+          opt.onmousedown = (e) => { e.preventDefault(); pickAddSuggestion(c, s); };
+          list.appendChild(opt);
+        });
+      };
+      inN.oninput = () => {
+        c.adding.name = inN.value;
+        c.adding.picked = null;
+        if (c.adding.timer) clearTimeout(c.adding.timer);
+        c.adding.timer = setTimeout(async () => {
+          try {
+            const r = await api('GET', '/api/catalog-search?machine=' +
+              encodeURIComponent(c.quote.machine) + '&q=' + encodeURIComponent(c.adding.name));
+            c.adding.suggestions = r.items || [];
+          } catch (e) { c.adding.suggestions = []; }
+          renderList();
+        }, 200);
+      };
+      inN.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmAdd(c); } };
+      wrap.appendChild(inN);
+      wrap.appendChild(list);
+      tdN.appendChild(wrap);
+      tr.appendChild(tdN);
+
+      const tdP = el('td', 'num');
+      const inP = el('input', 'edit-input');
+      inP.type = 'number';
+      inP.min = '0';
+      inP.placeholder = '单价';
+      inP.value = c.adding.price;
+      inP.oninput = () => { c.adding.price = inP.value; c.adding.picked = null; };
+      tdP.appendChild(inP);
+      tr.appendChild(tdP);
+
+      const tdQ = el('td', 'num');
+      const inQ = el('input', 'edit-input');
+      inQ.type = 'number';
+      inQ.min = '1';
+      inQ.value = String(c.adding.qty || 1);
+      inQ.oninput = () => { c.adding.qty = inQ.value; };
+      tdQ.appendChild(inQ);
+      tr.appendChild(tdQ);
+
+      tr.appendChild(el('td', 'num', ''));
+      const tdO = el('td', 'op-col');
+      const ok = el('button', 'btn-edit ok', '确定');
+      ok.onclick = () => confirmAdd(c);
+      const cancel = el('button', 'btn-edit', '取消');
+      cancel.onclick = () => { c.adding = null; renderCardTable(c); };
+      tdO.appendChild(ok);
+      tdO.appendChild(document.createTextNode(' '));
+      tdO.appendChild(cancel);
+      tr.appendChild(tdO);
+      tbody.appendChild(tr);
+      setTimeout(() => { inN.focus(); }, 0);
+    };
+
     rows.forEach((row) => {
       const tr = el('tr');
 
@@ -560,102 +650,48 @@
         const btn = el('button', 'btn-edit', '改价');
         btn.title = '仅修改本次报价，不改知识库价格';
         btn.onclick = () => startEditPrice(c, row.name);
+        const ins = el('button', 'btn-edit', '插入');
+        ins.title = '在这行下面插入一个新配件';
+        ins.onclick = () => {
+          c.adding = { name: '', qty: 1, price: '', picked: null, suggestions: [], timer: null, after: row.name };
+          renderCardTable(c);
+        };
         const del = el('button', 'btn-edit danger', '删除');
         del.onclick = () => deleteCardRow(c, row);
         tdOp.appendChild(btn);
         tdOp.appendChild(document.createTextNode(' '));
+        tdOp.appendChild(ins);
+        tdOp.appendChild(document.createTextNode(' '));
         tdOp.appendChild(del);
       } else {
+        const ins = el('button', 'btn-edit', '插入');
+        ins.title = '在这行下面插入一个新配件';
+        ins.onclick = () => {
+          c.adding = { name: '', qty: 1, price: '', picked: null, suggestions: [], timer: null, after: row.name };
+          renderCardTable(c);
+        };
         const del = el('button', 'btn-edit danger', '删除');
         del.onclick = () => deleteCardRow(c, row);
-        tdOp.appendChild(el('span', 'op-hint', '手动价 '));
+        tdOp.appendChild(el('span', 'op-hint', '手动 '));
+        tdOp.appendChild(ins);
+        tdOp.appendChild(document.createTextNode(' '));
         tdOp.appendChild(del);
       }
       tr.appendChild(tdOp);
       tbody.appendChild(tr);
+      // 行级插入：在点击「插入」的那行下面显示输入行
+      if (c.adding && c.adding.after === row.name) appendAddRow();
     });
+    if (c.adding && !addRowPlaced) appendAddRow(); // 兜底：引用行不存在时显示在末尾
 
-    // 补配件行（AI 漏报时手动补一个：可搜目录，也可自定义名称手填价）
-    if (c.adding) {
-      const tr = el('tr', 'add-row');
-      const tdN = el('td');
-      const wrap = el('div', 'fz-wrap');
-      const inN = el('input', 'edit-input fz-input');
-      inN.type = 'text';
-      inN.placeholder = '配件名：可搜索目录，也可自定义';
-      inN.value = c.adding.name;
-      const list = el('div', 'fz-list hidden');
-      const renderList = () => {
-        list.innerHTML = '';
-        const sugs = c.adding.suggestions || [];
-        if (!sugs.length) {
-          if ((c.adding.name || '').trim()) {
-            list.classList.remove('hidden');
-            list.appendChild(el('div', 'fz-hint', '未匹配到目录配件 — 按 Enter / 确定 保存为自定义配件'));
-          } else {
-            list.classList.add('hidden');
-          }
-          return;
-        }
-        list.classList.remove('hidden');
-        sugs.forEach((s) => {
-          const opt = el('div', 'fz-item', s.name);
-          opt.appendChild(el('span', 'fz-price', '¥' + fmt(s.price)));
-          opt.onmousedown = (e) => { e.preventDefault(); pickAddSuggestion(c, s); };
-          list.appendChild(opt);
-        });
-      };
-      inN.oninput = () => {
-        c.adding.name = inN.value;
-        c.adding.picked = null;
-        if (c.adding.timer) clearTimeout(c.adding.timer);
-        c.adding.timer = setTimeout(async () => {
-          try {
-            const r = await api('GET', '/api/catalog-search?machine=' +
-              encodeURIComponent(c.quote.machine) + '&q=' + encodeURIComponent(c.adding.name));
-            c.adding.suggestions = r.items || [];
-          } catch (e) { c.adding.suggestions = []; }
-          renderList();
-        }, 200);
-      };
-      inN.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmAdd(c); } };
-      wrap.appendChild(inN);
-      wrap.appendChild(list);
-      tdN.appendChild(wrap);
-      tr.appendChild(tdN);
-
-      const tdP = el('td', 'num');
-      const inP = el('input', 'edit-input');
-      inP.type = 'number';
-      inP.min = '0';
-      inP.placeholder = '单价';
-      inP.value = c.adding.price;
-      inP.oninput = () => { c.adding.price = inP.value; c.adding.picked = null; };
-      tdP.appendChild(inP);
-      tr.appendChild(tdP);
-
-      const tdQ = el('td', 'num');
-      const inQ = el('input', 'edit-input');
-      inQ.type = 'number';
-      inQ.min = '1';
-      inQ.value = String(c.adding.qty || 1);
-      inQ.oninput = () => { c.adding.qty = inQ.value; };
-      tdQ.appendChild(inQ);
-      tr.appendChild(tdQ);
-
-      tr.appendChild(el('td', 'num', ''));
-      const tdO = el('td', 'op-col');
-      const ok = el('button', 'btn-edit ok', '确定');
-      ok.onclick = () => confirmAdd(c);
-      const cancel = el('button', 'btn-edit', '取消');
-      cancel.onclick = () => { c.adding = null; renderCardTable(c); };
-      tdO.appendChild(ok);
-      tdO.appendChild(document.createTextNode(' '));
-      tdO.appendChild(cancel);
-      tr.appendChild(tdO);
-      tbody.appendChild(tr);
-      setTimeout(() => { inN.focus(); }, 0);
-    }
+    // 合计金额行：所有配件之下
+    const trT = el('tr', 'qc-total-row');
+    const tdT = el('td', 'qc-total-label', '合计金额');
+    tdT.colSpan = 3;
+    trT.appendChild(tdT);
+    trT.appendChild(el('td', 'num qc-total-num', '¥' + fmt(total)));
+    trT.appendChild(el('td', ''));
+    tbody.appendChild(trT);
 
     tbl.appendChild(tbody);
     return tbl;
@@ -690,13 +726,28 @@
     const name = String(c.adding.name || '').trim();
     if (!name) { alert('请填写配件名（可搜索目录或自定义）'); return; }
     const qty = Math.max(1, parseInt(c.adding.qty, 10) || 1);
+    const after = c.adding.after || null;
     if (c.adding.picked && c.adding.picked.name === name) {
       const s = c.adding.picked;
+      const newItem = { name: s.name, short: s.name, category: s.category || 'other', qty, price: s.price, note: s.note || '' };
       c.quote.items = c.quote.items || [];
-      c.quote.items.push({ name: s.name, short: s.name, category: s.category || 'other', qty, price: s.price, note: s.note || '' });
+      // 插在引用行（目录件）的下面
+      const k = after ? c.quote.items.findIndex((i) => i.name === after) : -1;
+      if (k >= 0) c.quote.items.splice(k + 1, 0, newItem);
+      else c.quote.items.push(newItem);
     } else {
-      const price = Math.max(0, Number(c.adding.price) || 0);
-      c.manual[name] = { qty, price };
+      const entry = { qty, price: Math.max(0, Number(c.adding.price) || 0) };
+      if (after && c.manual[after]) {
+        // 引用行是手动件：保持手动件之间的先后顺序，插在它后面
+        const next = {};
+        Object.keys(c.manual).forEach((k) => {
+          next[k] = c.manual[k];
+          if (k === after) next[name] = entry;
+        });
+        c.manual = next;
+      } else {
+        c.manual[name] = entry; // 手动件统一显示在目录件之后
+      }
     }
     c.adding = null;
     recomputeCard(c.id);
@@ -731,7 +782,8 @@
     const tsv = ['配件\t单价\t数量\t小计'];
     items.forEach((i) => tsv.push(i.name + '\t' + i.price + '\t' + i.qty + '\t' + i.subtotal));
     manual.forEach((m) => tsv.push(m.name + '\t' + m.price + '\t' + m.qty + '\t' + m.subtotal));
-    tsv.push('总价\t' + total);
+    // 合计金额占位空列，让金额与小计列对齐
+    tsv.push('合计金额\t\t\t' + total);
     c.currentDetail = tsv.join('\n');
 
     if (c.totalEl) c.totalEl.textContent = '合计：¥ ' + fmt(total);
@@ -1149,13 +1201,17 @@
 
     function sourceItems() {
       const kw = inKw.value.trim().toLowerCase();
+      let list;
       if (sel.value === '__TOTAL__') {
-        return priceTotal.filter((i) =>
+        list = priceTotal.filter((i) =>
+          !kw || ((i.name + ' ' + (i.short || '') + ' ' + (i.note || '')).toLowerCase().includes(kw)));
+      } else {
+        const src = (priceData || []).find((m) => m.id === sel.value);
+        list = ((src && src.items) || []).filter((i) =>
           !kw || ((i.name + ' ' + (i.short || '') + ' ' + (i.note || '')).toLowerCase().includes(kw)));
       }
-      const src = (priceData || []).find((m) => m.id === sel.value);
-      return ((src && src.items) || []).filter((i) =>
-        !kw || ((i.name + ' ' + (i.short || '') + ' ' + (i.note || '')).toLowerCase().includes(kw)));
+      // 按名称字典序排列，与价格表一致，便于查找
+      return list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-Hans-CN'));
     }
     function renderList() {
       list.innerHTML = '';
@@ -1679,7 +1735,7 @@
     body.appendChild(el('pre', 'modal-pre', h.simple));
 
     body.appendChild(el('div', 'qc-sub', '复杂版'));
-    body.appendChild(buildDetailTable(h.items));
+    body.appendChild(buildDetailTable(h.items, h.total));
     if (h.missing && h.missing.length) {
       const d = el('div', 'qc-sub warn', '缺项');
       body.appendChild(d);
