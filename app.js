@@ -737,9 +737,56 @@
     if (c.totalEl) c.totalEl.textContent = '合计：¥ ' + fmt(total);
   }
 
-  async function saveCard(cardId, btn) {
+  // 保存报价：先问一句「这份报价给谁」，便于历史记录按客户查找
+  function saveCard(cardId, btn) {
     const c = cards[cardId];
     if (!c) return;
+    openModal('保存报价到历史');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '记录这份报价是给谁的（客户/单位名称），便于以后按客户查找；可留空。'));
+    const row = el('div', 'form-row item-field');
+    row.appendChild(el('label', '', '客户'));
+    const inClient = el('input', 'edit-input wide');
+    inClient.type = 'text';
+    inClient.maxLength = 60;
+    inClient.placeholder = '如：济南某某科技有限公司';
+    row.appendChild(inClient);
+    body.appendChild(row);
+    const btns = el('div', 'form-row');
+    const ok = el('button', 'btn-edit ok', '保存');
+    const cancel = el('button', 'btn-edit', '取消');
+    btns.appendChild(ok);
+    btns.appendChild(document.createTextNode(' '));
+    btns.appendChild(cancel);
+    body.appendChild(btns);
+    cancel.onclick = closeModal;
+    ok.onclick = async () => {
+      const clientName = inClient.value.trim();
+      closeModal();
+      btn.disabled = true;
+      btn.textContent = '保存中…';
+      try {
+        await api('POST', '/api/history', {
+          clientName,
+          text: (c.quote.requirement && c.quote.requirement.summary) || '',
+          machine: c.quote.machine,
+          machineVariant: c.quote.machineVariant,
+          items: collectCardItems(c),
+          missing: c.quote.missing || [],
+        });
+        btn.textContent = '已保存 ✓';
+        loadHistory();
+      } catch (e) {
+        alert('保存失败：' + e.message);
+        btn.disabled = false;
+        btn.textContent = '保存到历史';
+      }
+    };
+    setTimeout(() => { inClient.focus(); }, 0);
+  }
+
+  // 收集本次报价的配件（目录件 + 手动件），供服务端按生效价重渲染
+  function collectCardItems(c) {
     const items = effectiveItems(c).map((i) => {
       const o = { name: i.name, qty: i.qty };
       if (i.overridden) { o.price = i.price; o.override = true; } // 改价仅本次生效，随本次报价入库
@@ -749,23 +796,7 @@
       const m = c.manual[name];
       items.push({ name, qty: m.qty, price: m.price });
     });
-    btn.disabled = true;
-    btn.textContent = '保存中…';
-    try {
-      await api('POST', '/api/history', {
-        text: (c.quote.requirement && c.quote.requirement.summary) || '',
-        machine: c.quote.machine,
-        machineVariant: c.quote.machineVariant,
-        items,
-        missing: c.quote.missing || [],
-      });
-      btn.textContent = '已保存 ✓';
-      loadHistory();
-    } catch (e) {
-      alert('保存失败：' + e.message);
-      btn.disabled = false;
-      btn.textContent = '保存到历史';
-    }
+    return items;
   }
 
   // ---------- 历史 ----------
@@ -789,7 +820,8 @@
       const d = new Date(h.createdAt);
       const dateStr = d.getMonth() + 1 + '-' + d.getDate() + ' ' +
         String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-      item.appendChild(el('div', 'hi-title', (h.machine || '报价') + ' · ¥' + fmt(h.total)));
+      item.appendChild(el('div', 'hi-title',
+        (h.clientName ? '给「' + h.clientName + '」· ' : '') + (h.machine || '报价') + ' · ¥' + fmt(h.total)));
       item.appendChild(el('div', 'hi-sub', dateStr));
       item.onclick = () => openHistoryModal(h);
       list.appendChild(item);
@@ -1637,9 +1669,10 @@
   }
 
   function openHistoryModal(h) {
-    openModal((h.machine || '报价') + ' · 合计 ¥' + fmt(h.total));
+    openModal((h.clientName ? '给「' + h.clientName + '」· ' : '') + (h.machine || '报价') + ' · 合计 ¥' + fmt(h.total));
     const body = $('#modal-body');
     if (h.text) body.appendChild(el('div', 'qc-line', '需求：' + h.text));
+    if (h.clientName) body.appendChild(el('div', 'qc-line', '客户：' + h.clientName));
     if (h.machineVariant) body.appendChild(el('div', 'qc-line', '版本：' + h.machineVariant));
 
     body.appendChild(el('div', 'qc-sub', '简洁版'));
