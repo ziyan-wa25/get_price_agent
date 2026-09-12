@@ -3,6 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
+  console.log('[报价系统] app.js build v20260618-2（机型批量删除 / 规则导入追加 / 规则框加宽）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   let token = localStorage.getItem('qa_token') || '';
@@ -1036,7 +1037,7 @@
     openModal('选型规则 — ' + m.family);
     const body = $('#modal-body');
     body.appendChild(el('div', 'modal-hint',
-      '这是 AI 给该机型选配件时必须遵守的规则（报价原则）。改完立即对 AI 报价生效；填了规则、有配件的机型即可被 AI 选配。支持导入 .md / .txt 文件（doc/docx 请先另存为 txt）。'));
+      '这是 AI 给该机型选配件时必须遵守的规则（报价原则）。改完立即对 AI 报价生效；填了规则、有配件的机型即可被 AI 选配。导入 .md/.txt 文件会【追加】到现有规则后面，不会覆盖（doc/docx 请先另存为 txt）。'));
     const ta = el('textarea', 'edit-input wide rules-ta');
     ta.rows = 12;
     ta.value = m.rulesMd || '';
@@ -1060,8 +1061,10 @@
           alert('这个文件看起来是二进制格式（doc/docx）。请先用 Word/WPS「另存为 → 纯文本(.txt)」再导入。');
           return;
         }
-        ta.value = text;
-        fileHint.textContent = '已导入：' + f.name;
+        // 追加而不是替换：新内容粘在原有规则后面，管理员可再手动编辑后保存
+        const cur = ta.value.replace(/\s+$/, '');
+        ta.value = (cur ? cur + '\n\n' : '') + text.trim();
+        fileHint.textContent = '已追加到现有规则后面：' + f.name + '（可继续编辑，点「保存规则」生效）';
       };
       reader.readAsText(f, 'utf-8');
     };
@@ -1344,6 +1347,19 @@
     try {
       if (machineId) await api('POST', '/api/catalog-items-batch', { machine: machineId, changes });
       else await api('POST', '/api/total-items-batch', { changes, deletions });
+      priceBatch = null;
+      await loadPriceData();
+    } catch (e) { alert(e.message); }
+  }
+
+  // 机型内批量删除：仅从本机型移除所选配件，总表与其他机型完全不受影响
+  async function confirmMachineDeletes(m) {
+    const names = Array.from(priceBatch.deletions);
+    if (!names.length) { alert('还没有标记要删除的配件：点每行的「删除」先标记'); return; }
+    if (!confirm('将从机型「' + m.family + '」移除 ' + names.length + ' 个配件：\n' + names.join('、') +
+      '\n\n仅影响本机型；总表与其他机型不受影响。确定？')) return;
+    try {
+      await api('POST', '/api/catalog-items-batch', { machine: m.id, deletions: names });
       priceBatch = null;
       await loadPriceData();
     } catch (e) { alert(e.message); }
@@ -1632,12 +1648,28 @@
 
     if (isAdmin) {
       box.appendChild(el('div', 'price-banner admin',
-        '机型页只读：配件的名称、价格、描述统一在「📌 总表」编辑（总表修改会写穿到这里）。用「批量导入」把总表或其他机型的配件加入本机型。'));
+        '配件的名称/价格/描述统一在「📌 总表」编辑（修改会写穿到这里）；本页用「批量导入」加配件、「批量删除」清理导入失误——批量删除只删本机型，总表与其他机型不受影响。'));
       const toolbar = el('div', 'price-toolbar');
-      const impBtn = el('button', 'btn-edit', '批量导入');
-      impBtn.title = '从总表或其他机型勾选配件批量导入当前机型';
-      impBtn.onclick = () => openImportModal();
-      toolbar.appendChild(impBtn);
+      if (priceBatch && priceBatch.mode === 'machine-delete') {
+        const delBtn = el('button', 'btn-edit danger', '删除所选（' + priceBatch.deletions.size + '）');
+        delBtn.onclick = () => confirmMachineDeletes(m);
+        const cancelBtn = el('button', 'btn-edit', '取消');
+        cancelBtn.onclick = () => { priceBatch = null; renderPriceTable(); };
+        toolbar.appendChild(delBtn);
+        toolbar.appendChild(document.createTextNode(' '));
+        toolbar.appendChild(cancelBtn);
+        toolbar.appendChild(el('span', 'op-hint', ' 点每行「删除」标记（再点撤销），确认后仅从本机型移除'));
+      } else {
+        const impBtn = el('button', 'btn-edit', '批量导入');
+        impBtn.title = '从总表或其他机型勾选配件批量导入当前机型';
+        impBtn.onclick = () => openImportModal();
+        toolbar.appendChild(impBtn);
+        toolbar.appendChild(document.createTextNode(' '));
+        const delBtn = el('button', 'btn-edit danger', '批量删除');
+        delBtn.title = '标记多个配件，一次从本机型移除（总表不受影响）';
+        delBtn.onclick = () => { priceBatch = { mode: 'machine-delete', deletions: new Set() }; renderPriceTable(); };
+        toolbar.appendChild(delBtn);
+      }
       box.appendChild(toolbar);
     }
 
@@ -1645,12 +1677,13 @@
     const rows = (m.items || []).filter((i) =>
       !kw || ((i.name + ' ' + (i.short || '') + ' ' + (i.note || '')).toLowerCase().includes(kw)));
 
-    const cols = ['配件', '单价'];
+    const delMode = !!(priceBatch && priceBatch.mode === 'machine-delete');
+    const cols = delMode ? ['配件', '单价', '操作'] : ['配件', '单价'];
     const tbl = el('table');
     const thead = el('thead');
     const trh = el('tr');
     cols.forEach((h, i) => {
-      const th = el('th', i === 1 ? 'num' : '', h);
+      const th = el('th', i === 1 ? 'num' : (i === 2 ? 'op-col' : ''), h);
       trh.appendChild(th);
     });
     thead.appendChild(trh);
@@ -1679,6 +1712,19 @@
         const tr = el('tr');
         tr.appendChild(el('td', '', i.name));
         tr.appendChild(el('td', 'num', i.price === null || i.price === undefined ? '—' : fmt(i.price)));
+        if (delMode) {
+          const toBeDeleted = priceBatch.deletions.has(i.name);
+          const tdOp = el('td', 'op-col');
+          const delBtn = el('button', 'btn-edit danger', toBeDeleted ? '撤销删除' : '删除');
+          delBtn.onclick = () => {
+            if (priceBatch.deletions.has(i.name)) priceBatch.deletions.delete(i.name);
+            else priceBatch.deletions.add(i.name);
+            renderPriceTable();
+          };
+          tdOp.appendChild(delBtn);
+          tr.appendChild(tdOp);
+          if (toBeDeleted) tr.classList.add('batch-del');
+        }
         tbody.appendChild(tr);
         shown++;
       });

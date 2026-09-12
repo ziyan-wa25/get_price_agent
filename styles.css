@@ -347,7 +347,8 @@ tr.batch-del td { background: #fff5f5; }
 .fz-hint { padding: 6px 10px; font-size: 12px; color: #98a2b3; }
 
 /* 选型规则编辑 */
-.rules-ta { font-family: inherit; line-height: 1.6; }
+/* 选型规则编辑框：与弹窗内容区对齐（占满整行） */
+.rules-ta { font-family: inherit; line-height: 1.6; width: 100%; box-sizing: border-box; display: block; resize: vertical; }
 
 /* 报价表合计金额行 */
 .qc-total-row td { border-top: 2px solid #d9dce1; font-weight: 600; background: #fbfbfc; }
