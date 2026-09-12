@@ -938,6 +938,7 @@
   }
 
   function renderPricePage() {
+    const isAdmin = me && me.role === 'admin';
     const tabs = $('#price-tabs');
     tabs.innerHTML = '';
     // 总表页签：与所有机型并列
@@ -967,7 +968,6 @@
       tabs.appendChild(b);
     });
 
-    const isAdmin = me && me.role === 'admin';
     if (isAdmin && !priceTotalMode && priceMachineId) {
       const cur = (priceData || []).find((x) => x.id === priceMachineId);
       const ops = el('div', 'price-toolbar machine-ops');
