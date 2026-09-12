@@ -30,6 +30,11 @@
     return Number(n || 0).toLocaleString('zh-CN');
   }
 
+  // 价格统一比较：null/undefined/空串都视为「未填」
+  function normPrice(v) {
+    return v === null || v === undefined || v === '' ? '' : String(v);
+  }
+
   async function api(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -875,6 +880,17 @@
       item.appendChild(el('div', 'hi-title',
         (h.clientName ? '给「' + h.clientName + '」· ' : '') + (h.machine || '报价') + ' · ¥' + fmt(h.total)));
       item.appendChild(el('div', 'hi-sub', dateStr));
+      const del = el('button', 'hi-del', '✕');
+      del.title = '删除这条历史报价';
+      del.onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm('删除这条历史报价？删除后不可恢复。')) return;
+        try {
+          await api('DELETE', '/api/history/' + encodeURIComponent(h.id));
+          loadHistory();
+        } catch (err) { alert(err.message); }
+      };
+      item.appendChild(del);
       item.onclick = () => openHistoryModal(h);
       list.appendChild(item);
     });
@@ -899,6 +915,7 @@
   let priceBatch = null; // 批量编辑进行中 {edits: {原始名: {name, price}}}
   let priceTotalMode = false; // 当前显示「总表」而不是某个机型
   let priceTotal = []; // 总表条目（apiCatalog 返回）
+  let dragMachineId = null; // 拖动排序中正在拖的机型 id
 
   async function loadPriceData() {
     const box = $('#price-content');
@@ -934,6 +951,19 @@
       if (m.priced || me.role === 'admin') {
         b.onclick = () => { priceMachineId = m.id; priceTotalMode = false; priceEdit = null; priceBatch = null; renderPricePage(); };
       }
+      // 管理员可拖动页签调整机型顺序
+      if (isAdmin) {
+        b.draggable = true;
+        b.title = m.family + '（拖动可调整机型顺序）';
+        b.ondragstart = (e) => {
+          dragMachineId = m.id;
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', m.id); } catch (err) { /* 忽略 */ }
+        };
+        b.ondragover = (e) => { e.preventDefault(); };
+        b.ondrop = (e) => { e.preventDefault(); reorderMachineDrag(dragMachineId, m.id); };
+        b.ondragend = () => { dragMachineId = null; };
+      }
       tabs.appendChild(b);
     });
 
@@ -963,24 +993,27 @@
       ops.appendChild(bDel);
       ops.appendChild(document.createTextNode(' '));
 
-      const ids = (priceData || []).map((m) => m.id);
-      const k = ids.indexOf(priceMachineId);
-      const bUp = el('button', 'btn-edit', '↑ 上移');
-      bUp.disabled = k <= 0;
-      bUp.onclick = () => moveMachine(-1);
-      const bDown = el('button', 'btn-edit', '↓ 下移');
-      bDown.disabled = k < 0 || k >= ids.length - 1;
-      bDown.onclick = () => moveMachine(1);
-      ops.appendChild(bUp);
-      ops.appendChild(document.createTextNode(' '));
-      ops.appendChild(bDown);
-
       if (cur && !cur.priced) {
-        ops.appendChild(el('span', 'op-hint', ' 新机型还没有配件：用「新增配件 / 批量导入」补充；未填选型规则时 AI 暂不选配它'));
+        ops.appendChild(el('span', 'op-hint', ' 新机型还没有配件：用「批量导入」补充；未填选型规则时 AI 暂不自动选配它'));
       }
+      ops.appendChild(el('span', 'op-hint', ' 机型顺序：直接拖动上方页签调整'));
       tabs.appendChild(ops);
     }
     renderPriceTable();
+  }
+
+  // 拖动排序：把 src 拖到 dst 的位置后整体保存
+  async function reorderMachineDrag(srcId, dstId) {
+    if (!srcId || !dstId || srcId === dstId) return;
+    const ids = (priceData || []).map((m) => m.id);
+    const from = ids.indexOf(srcId);
+    const to = ids.indexOf(dstId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    try {
+      await api('POST', '/api/machine', { action: 'reorder', order: ids });
+      await loadPriceData();
+    } catch (e) { alert(e.message); }
   }
 
   // 删除机型（仅在线新增的机型；内置机型后端会拒绝）
@@ -1056,25 +1089,12 @@
     };
   }
 
-  // 机型排序：与相邻机型交换后整体保存
-  async function moveMachine(delta) {
-    const ids = (priceData || []).map((m) => m.id);
-    const k = ids.indexOf(priceMachineId);
-    const nk = k + delta;
-    if (k < 0 || nk < 0 || nk >= ids.length) return;
-    ids.splice(nk, 0, ids.splice(k, 1)[0]);
-    try {
-      await api('POST', '/api/machine', { action: 'reorder', order: ids });
-      await loadPriceData();
-    } catch (e) { alert(e.message); }
-  }
-
   // 新增机型：名称必填；报价原则可粘贴或复制现有机型，留空则 AI 暂不选配该机型
   function openMachineModal() {
     openModal('新增机型');
     const body = $('#modal-body');
     body.appendChild(el('div', 'modal-hint',
-      '建好后默认没有配件，用「+ 新增配件 / 批量导入」补充。报价原则可留空——留空时该机型仅作价格表展示，AI 暂不选配它。'));
+      '建好后默认没有配件，用「批量导入」补充（配件内容与价格统一在总表维护）。报价原则可留空——留空时 AI 暂不自动选配它，用户点名时仍可报价。'));
 
     const mkField = (labelText, input) => {
       const row = el('div', 'form-row item-field');
@@ -1230,7 +1250,19 @@
         return;
       }
       groups.forEach(([label, g]) => {
-        list.appendChild(el('div', 'imp-group', label));
+        const head = el('div', 'imp-group');
+        const allNames = g.map((i) => i.name);
+        const cbAll = el('input');
+        cbAll.type = 'checkbox';
+        cbAll.checked = allNames.length > 0 && allNames.every((n) => checked.has(n));
+        cbAll.title = '全选/取消本类';
+        cbAll.onchange = () => {
+          allNames.forEach((n) => (cbAll.checked ? checked.add(n) : checked.delete(n)));
+          renderList();
+        };
+        head.appendChild(cbAll);
+        head.appendChild(el('span', '', label + '（勾选=全选本类）'));
+        list.appendChild(head);
         g.forEach((i) => {
           const r = el('div', 'imp-row');
           const cb = el('input');
@@ -1243,7 +1275,7 @@
           const lab = el('label', '', i.name);
           r.appendChild(cb);
           r.appendChild(lab);
-          r.appendChild(el('span', 'fz-price', '¥' + fmt(i.price)));
+          r.appendChild(el('span', 'fz-price', i.price === null || i.price === undefined ? '—' : '¥' + fmt(i.price)));
           list.appendChild(r);
         });
       });
@@ -1274,36 +1306,44 @@
     await loadPriceData();
   }
 
-  // 批量编辑保存：只提交真正改动的行（改名/改价），一次原子写入（总表模式走总表接口）
+  // 批量编辑保存：只提交真正改动的行（改名/改价/删除），一次原子写入（总表模式走总表接口，删除写穿各机型）
   async function saveBatchEdits(items, machineId) {
+    const isTotal = !machineId;
     const changes = [];
-    Object.keys(priceBatch.edits).forEach((orig) => {
+    for (const orig of Object.keys(priceBatch.edits)) {
+      if (priceBatch.deletions && priceBatch.deletions.has(orig)) continue; // 待删行不提交修改
       const e = priceBatch.edits[orig];
       const cur = (items || []).find((i) => i.name === orig);
-      if (!cur) return; // 行已被其他操作删掉
+      if (!cur) continue; // 行已被其他操作删掉
       const newName = String(e.name || '').trim();
-      const num = Number(e.price);
       const nameChanged = newName !== orig;
-      const priceChanged = isFinite(num) && num !== cur.price;
-      if (!nameChanged && !priceChanged) return;
-      if (!nameChanged && !isFinite(num)) return; // 价格框被清空且未改名：视为未改
+      const priceChanged = normPrice(e.price) !== normPrice(cur.price);
+      if (!nameChanged && !priceChanged) continue;
+      if (!newName) { alert('配件名不能为空（' + orig + '），请填好再保存'); return; }
       changes.push({
         oldName: orig,
         item: {
           name: newName,
           short: cur.short,
           category: cur.category,
-          price: isFinite(num) ? e.price : cur.price,
+          // 总表允许空价格（null）；机型配件必须要有价格
+          price: isTotal ? (normPrice(e.price) === '' ? null : Number(e.price)) : (isFinite(Number(e.price)) ? e.price : cur.price),
           note: cur.note || '',
           attrs: cur.attrs || null,
           maxQty: cur.maxQty || null,
         },
       });
-    });
-    if (!changes.length) { priceBatch = null; renderPriceTable(); return; }
+    }
+    const deletions = isTotal && priceBatch.deletions ? Array.from(priceBatch.deletions) : [];
+    if (!changes.length && !deletions.length) { priceBatch = null; renderPriceTable(); return; }
+    if (deletions.length) {
+      if (!confirm('将保存 ' + changes.length + ' 条修改，并删除 ' + deletions.length +
+        ' 个配件：\n' + deletions.join('、') +
+        '\n\n⚠️ 各机型里的同名配件将一并删除，且不可恢复。确定？')) return;
+    }
     try {
       if (machineId) await api('POST', '/api/catalog-items-batch', { machine: machineId, changes });
-      else await api('POST', '/api/total-items-batch', { changes });
+      else await api('POST', '/api/total-items-batch', { changes, deletions });
       priceBatch = null;
       await loadPriceData();
     } catch (e) { alert(e.message); }
@@ -1345,7 +1385,7 @@
     inPrice.type = 'number';
     inPrice.min = '0';
     inPrice.value = isEdit && item.price !== null && item.price !== undefined ? String(item.price) : '';
-    inPrice.placeholder = '单价（元）';
+    inPrice.placeholder = isTotal ? '单价（可留空，稍后在总表补价）' : '单价（元）';
 
     const inNote = el('textarea', 'edit-input wide');
     inNote.rows = 3;
@@ -1373,6 +1413,15 @@
 
     cancel.onclick = closeModal;
     ok.onclick = async () => {
+      if (isTotal) {
+        // 客户端先行校验：空名 / 与总表重复，直接弹窗拒绝，不发请求
+        const nm = inName.value.trim();
+        if (!nm) { alert('配件名不能为空，请填写名称'); return; }
+        if ((!isEdit || nm !== item.name) && priceTotal.some((t) => t.name === nm)) {
+          alert('总表中已有同名配件：「' + nm + '」。\n请换一个名字，或直接编辑那个配件。');
+          return;
+        }
+      }
       let attrs = null;
       const attrsRaw = inAttrs.value.trim();
       if (attrsRaw) {
@@ -1446,8 +1495,8 @@
         toolbar.appendChild(addBtn);
         toolbar.appendChild(document.createTextNode(' '));
         const batchBtn = el('button', 'btn-edit', '批量编辑');
-        batchBtn.title = '直接在表格里一次改多个配件的名称和价格';
-        batchBtn.onclick = () => { priceBatch = { edits: {} }; renderPriceTable(); };
+        batchBtn.title = '直接在表格里一次改多个配件的名称和价格，也可勾选删除';
+        batchBtn.onclick = () => { priceBatch = { edits: {}, deletions: new Set() }; renderPriceTable(); };
         toolbar.appendChild(batchBtn);
         toolbar.appendChild(document.createTextNode(' '));
         const syncBtn = el('button', 'btn-edit', '⇩ 同步所有机型配件进总表');
@@ -1462,7 +1511,7 @@
         toolbar.appendChild(saveBtn);
         toolbar.appendChild(document.createTextNode(' '));
         toolbar.appendChild(cancelBtn);
-        toolbar.appendChild(el('span', 'op-hint', ' 改完点「保存全部修改」；改动行会高亮'));
+        toolbar.appendChild(el('span', 'op-hint', ' 直接改名称和价格（可留空，稍后补）；点「删除」标记要删的行（再点撤销），改完点「保存全部修改」'));
       }
       box.appendChild(toolbar);
     }
@@ -1502,6 +1551,7 @@
       tbody.appendChild(ctr);
       list.forEach((i) => {
         const tr = el('tr');
+        const toBeDeleted = !!(priceBatch && priceBatch.deletions && priceBatch.deletions.has(i.name));
         const tdName = el('td');
         if (priceBatch) {
           const e0 = priceBatch.edits[i.name] || (priceBatch.edits[i.name] = { name: i.name, price: i.price });
@@ -1510,7 +1560,8 @@
           inN.value = e0.name;
           inN.oninput = () => {
             e0.name = inN.value;
-            tr.classList.toggle('batch-changed', e0.name !== i.name || Number(e0.price) !== i.price);
+            tr.classList.toggle('batch-changed',
+              e0.name !== i.name || normPrice(e0.price) !== normPrice(i.price));
           };
           tdName.appendChild(inN);
         } else {
@@ -1524,10 +1575,12 @@
           const inP = el('input', 'edit-input');
           inP.type = 'number';
           inP.min = '0';
-          inP.value = String(e0.price);
+          inP.placeholder = '可留空';
+          inP.value = e0.price === null || e0.price === undefined ? '' : String(e0.price);
           inP.oninput = () => {
             e0.price = inP.value;
-            tr.classList.toggle('batch-changed', e0.name !== i.name || Number(e0.price) !== i.price);
+            tr.classList.toggle('batch-changed',
+              e0.name !== i.name || normPrice(e0.price) !== normPrice(i.price));
           };
           tdPrice.appendChild(inP);
         } else {
@@ -1538,7 +1591,13 @@
         if (isAdmin) {
           const tdOp = el('td', 'op-col');
           if (priceBatch) {
-            tdOp.appendChild(el('span', 'op-hint', '批量中'));
+            const delBtn = el('button', 'btn-edit danger', toBeDeleted ? '撤销删除' : '删除');
+            delBtn.onclick = () => {
+              if (priceBatch.deletions.has(i.name)) priceBatch.deletions.delete(i.name);
+              else priceBatch.deletions.add(i.name);
+              renderPriceTable();
+            };
+            tdOp.appendChild(delBtn);
           } else {
             const editBtn = el('button', 'btn-edit', '编辑');
             editBtn.onclick = () => openItemModal(null, i, true);
@@ -1550,6 +1609,7 @@
           }
           tr.appendChild(tdOp);
         }
+        if (toBeDeleted) tr.classList.add('batch-del');
         tbody.appendChild(tr);
         shown++;
       });
@@ -1572,32 +1632,12 @@
 
     if (isAdmin) {
       box.appendChild(el('div', 'price-banner admin',
-        '管理员模式：改价、新增/编辑/删除/批量导入配件、批量编辑，全部立即生效、云端持久保存并同步给所有用户（AI 报价同步使用）。'));
+        '机型页只读：配件的名称、价格、描述统一在「📌 总表」编辑（总表修改会写穿到这里）。用「批量导入」把总表或其他机型的配件加入本机型。'));
       const toolbar = el('div', 'price-toolbar');
-      if (!priceBatch) {
-        const addBtn = el('button', 'btn-edit ok', '+ 新增配件');
-        addBtn.onclick = () => openItemModal(m.id, null);
-        toolbar.appendChild(addBtn);
-        toolbar.appendChild(document.createTextNode(' '));
-        const batchBtn = el('button', 'btn-edit', '批量编辑');
-        batchBtn.title = '直接在表格里一次改多个配件的名称和价格，一键保存';
-        batchBtn.onclick = () => { priceBatch = { edits: {} }; renderPriceTable(); };
-        toolbar.appendChild(batchBtn);
-        toolbar.appendChild(document.createTextNode(' '));
-        const impBtn = el('button', 'btn-edit', '批量导入');
-        impBtn.title = '从其他机型勾选配件批量导入当前机型';
-        impBtn.onclick = () => openImportModal();
-        toolbar.appendChild(impBtn);
-      } else {
-        const saveBtn = el('button', 'btn-edit ok', '保存全部修改');
-        saveBtn.onclick = () => saveBatchEdits(m.items, m.id);
-        const cancelBtn = el('button', 'btn-edit', '取消批量');
-        cancelBtn.onclick = () => { priceBatch = null; renderPriceTable(); };
-        toolbar.appendChild(saveBtn);
-        toolbar.appendChild(document.createTextNode(' '));
-        toolbar.appendChild(cancelBtn);
-        toolbar.appendChild(el('span', 'op-hint', ' 直接修改名称和单价，改完点「保存全部修改」；改动行会高亮'));
-      }
+      const impBtn = el('button', 'btn-edit', '批量导入');
+      impBtn.title = '从总表或其他机型勾选配件批量导入当前机型';
+      impBtn.onclick = () => openImportModal();
+      toolbar.appendChild(impBtn);
       box.appendChild(toolbar);
     }
 
@@ -1605,12 +1645,12 @@
     const rows = (m.items || []).filter((i) =>
       !kw || ((i.name + ' ' + (i.short || '') + ' ' + (i.note || '')).toLowerCase().includes(kw)));
 
-    const cols = isAdmin ? ['配件', '单价', '操作'] : ['配件', '单价'];
+    const cols = ['配件', '单价'];
     const tbl = el('table');
     const thead = el('thead');
     const trh = el('tr');
     cols.forEach((h, i) => {
-      const th = el('th', i === 1 ? 'num' : (i === 2 ? 'op-col' : ''), h);
+      const th = el('th', i === 1 ? 'num' : '', h);
       trh.appendChild(th);
     });
     thead.appendChild(trh);
@@ -1637,85 +1677,8 @@
       tbody.appendChild(ctr);
       list.forEach((i) => {
         const tr = el('tr');
-
-        // 配件名列：批量编辑模式下变成文本框
-        const tdName = el('td');
-        if (priceBatch) {
-          const e0 = priceBatch.edits[i.name] || (priceBatch.edits[i.name] = { name: i.name, price: i.price });
-          const inN = el('input', 'edit-input batch-name');
-          inN.type = 'text';
-          inN.value = e0.name;
-          inN.oninput = () => {
-            e0.name = inN.value;
-            tr.classList.toggle('batch-changed', e0.name !== i.name || String(e0.price) !== String(i.price));
-          };
-          tdName.appendChild(inN);
-        } else {
-          tdName.appendChild(document.createTextNode(i.name));
-        }
-        tr.appendChild(tdName);
-
-        const tdPrice = el('td', 'num');
-        const editing = !!(priceEdit && priceEdit.name === i.name);
-        if (priceBatch) {
-          const e0 = priceBatch.edits[i.name];
-          const inP = el('input', 'edit-input');
-          inP.type = 'number';
-          inP.min = '0';
-          inP.value = String(e0.price);
-          inP.oninput = () => {
-            e0.price = inP.value;
-            tr.classList.toggle('batch-changed', e0.name !== i.name || Number(e0.price) !== i.price);
-          };
-          tdPrice.appendChild(inP);
-        } else if (editing) {
-          const input = el('input', 'edit-input');
-          input.type = 'number';
-          input.min = '0';
-          input.value = priceEdit.value;
-          input.oninput = () => { priceEdit.value = input.value; };
-          input.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              savePriceOverride(m.id, i.name, priceEdit.value).catch((err) => alert(err.message));
-            }
-            if (e.key === 'Escape') { e.preventDefault(); priceEdit = null; renderPriceTable(); }
-          };
-          tdPrice.appendChild(input);
-          setTimeout(() => { input.focus(); input.select(); }, 0);
-        } else {
-          tdPrice.appendChild(el('span', '',
-            i.price === null || i.price === undefined ? '—' : fmt(i.price)));
-        }
-        tr.appendChild(tdPrice);
-
-        if (isAdmin) {
-          const tdOp = el('td', 'op-col');
-          if (priceBatch) {
-            tdOp.appendChild(el('span', 'op-hint', '批量中'));
-          } else if (editing) {
-            const ok = el('button', 'btn-edit ok', '确定');
-            ok.onclick = () => savePriceOverride(m.id, i.name, priceEdit.value).catch((err) => alert(err.message));
-            const cancel = el('button', 'btn-edit', '取消');
-            cancel.onclick = () => { priceEdit = null; renderPriceTable(); };
-            tdOp.appendChild(ok);
-            tdOp.appendChild(document.createTextNode(' '));
-            tdOp.appendChild(cancel);
-          } else {
-            const btn = el('button', 'btn-edit', '改价');
-            btn.onclick = () => { priceEdit = { name: i.name, value: String(i.price) }; renderPriceTable(); };
-            const editBtn = el('button', 'btn-edit', '编辑');
-            editBtn.onclick = () => openItemModal(m.id, i);
-            const delBtn = el('button', 'btn-edit danger', '删除');
-            delBtn.onclick = () => deleteCatalogItem(m.id, i);
-            tdOp.appendChild(btn);
-            tdOp.appendChild(document.createTextNode(' '));
-            tdOp.appendChild(editBtn);
-            tdOp.appendChild(document.createTextNode(' '));
-            tdOp.appendChild(delBtn);
-          }
-          tr.appendChild(tdOp);
-        }
+        tr.appendChild(el('td', '', i.name));
+        tr.appendChild(el('td', 'num', i.price === null || i.price === undefined ? '—' : fmt(i.price)));
         tbody.appendChild(tr);
         shown++;
       });
@@ -1861,7 +1824,7 @@
   $('#btn-admin').onclick = openAdminModal;
   $('#btn-change-pass').onclick = openChangePassModal;
   $('#modal-close').onclick = closeModal;
-  $('#modal-mask').addEventListener('click', (e) => { if (e.target === $('#modal-mask')) closeModal(); });
+  // 弹窗只通过「保存/取消/✕」关闭：点窗格外部不退出，防止误触丢失正在编辑的内容
 
   const ta = $('#input');
   ta.addEventListener('keydown', (e) => {
