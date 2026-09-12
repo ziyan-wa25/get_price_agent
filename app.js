@@ -1331,7 +1331,7 @@
 
   async function deleteCatalogItem(machineId, item, isTotal) {
     if (isTotal) {
-      if (!confirm('从总表删除「' + item.name + '」？\n各机型里的同名配件不受删除影响，只是不再使用总表价（回到各自目录价）。')) return;
+      if (!confirm('从总表删除「' + item.name + '」？\n⚠️ 所有机型里的同名配件将一并删除，且不可恢复！')) return;
       try {
         await api('DELETE', '/api/total-item/' + encodeURIComponent(item.name));
         await loadPriceData();
@@ -1362,7 +1362,7 @@
     box.innerHTML = '';
     const isAdmin = me && me.role === 'admin';
     box.appendChild(el('div', 'price-banner admin',
-      '总表 = 所有已知配件的价格基准。修改总表价格后，所有机型中「同名配件」立即按总表价计价（机型里的单独改价仍然优先）。' +
+      '总表 = 所有配件的唯一主数据：修改总表（价格/描述/名称/分类）会立即写穿到所有机型里的同名配件；删除总表配件时，所有机型里的同名配件一并删除。' +
       '机型页的「批量导入」可直接从总表选配件。'));
 
     if (isAdmin) {
