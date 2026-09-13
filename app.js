@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260618-2（机型批量删除 / 规则导入追加 / 规则框加宽）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-1（历史报价可编辑 / 新建报价两段式 / 输出自动重试 / 单价数量点击改）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   let token = localStorage.getItem('qa_token') || '';
