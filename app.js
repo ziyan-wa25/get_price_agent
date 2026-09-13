@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-3（应收明细/库存表/岗位体系/历史可编辑/自动重试）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-5（库存批量改/权限收紧/应收勾选导出）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   let token = localStorage.getItem('qa_token') || '';
@@ -41,7 +41,7 @@
     if (token) headers['Authorization'] = 'Bearer ' + token;
     let res;
     try {
-      res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }); // 禁用 HTTP 缓存：换账号后绝不允许命中上一任用户的响应
     } catch (e) {
       throw new Error('网络错误：无法连接后端服务');
     }
@@ -122,9 +122,37 @@
     } else {
       $('#btn-admin').classList.add('hidden');
     }
+    resetUserData(); // 清掉上一任用户留在内存里的页面数据（价格/库存/应收/历史），防止越权残留
     newChat();
     loadHistory();
     $('#input').focus();
+  }
+
+  // 切换账号时必须清空的按用户缓存 + 回到报价页
+  function resetUserData() {
+    stockData = null;
+    stockBatchMode = null;
+    stockEdits = {};
+    stockDelSel = new Set();
+    recvData = null;
+    recvFilter = '';
+    recvSel = new Set();
+    priceData = null;
+    priceTotal = [];
+    priceMachineId = null;
+    priceTotalMode = false;
+    priceEdit = null;
+    priceBatch = null;
+    dragMachineId = null;
+    history = [];
+    $('#history-list').innerHTML = '';
+    $('#price-content').innerHTML = '';
+    $('#stock-content').innerHTML = '';
+    $('#recv-content').innerHTML = '';
+    $('#stock-info').innerHTML = '';
+    $('#recv-info').innerHTML = '';
+    $('#recv-filter').innerHTML = '';
+    showPage('chat');
   }
 
   // ---------- 对话 ----------
@@ -977,9 +1005,10 @@
   // ---------- 历史 ----------
   // ---------- 库存表（独立于报价/LLM） ----------
   const ROLE_LABELS = { admin: '管理员', user: '普通用户', uploader: '库存上传员', exporter: '库存导出员' };
-  let stockData = null;  // GET /api/stock 结果：{items, lastImportAt, lastImportBy, canSeeCost, canImport, canExport, canEdit}
-  let stockEdit = null;  // 进行中的单元格编辑 {name, field, oldValue, newValue}
-  let stockBatch = null; // 批量修改/删除模式（仅 admin）{selected:Set(names), price:'', note:''}
+  let stockData = null;      // GET /api/stock 结果：{items, lastImportAt, lastImportBy, lastPriceChangeAt, lastPriceChangeBy, canSeePrice, canImport, canExport, canEdit}
+  let stockBatchMode = null; // null | 'edit' | 'delete'（仅 admin）：批量修改=表格里直接改多个格子一次提交；批量删除=勾选删除
+  let stockEdits = {};       // 批量修改进行中的整行副本 {原始货品名称: {name, qty, cost, price, note}}
+  let stockDelSel = new Set(); // 批量删除勾选
 
   async function loadStock() {
     const box = $('#stock-content');
@@ -1010,14 +1039,6 @@
     return s === '' ? '—' : s; // 价格列不带人民币符号，原样显示
   }
 
-  function stockRawValue(it, field) {
-    if (field === 'name') return it.name;
-    if (field === 'qty') return String(Number(it.qty) || 0);
-    if (field === 'cost') return String(Number(it.cost) || 0);
-    if (field === 'price') return String(it.price == null ? '' : it.price);
-    return String(it.note == null ? '' : it.note);
-  }
-
   function renderStockPage() {
     const box = $('#stock-content');
     box.innerHTML = '';
@@ -1034,54 +1055,56 @@
     info.appendChild(el('span', 'stock-import-time', '　💰 最后一次修改售价：' + pt));
 
     const bar = el('div', 'stock-toolbar');
-    if (stockData.canEdit) {
-      const bAdd = el('button', '', '＋ 新增配件');
-      bAdd.onclick = openStockItemModal;
-      bar.appendChild(bAdd);
-      const bBatch = el('button', '', stockBatch ? '退出批量' : '✏️ 批量修改/删除');
-      bBatch.onclick = toggleStockBatch;
-      bar.appendChild(bBatch);
-    }
-    if (stockData.canImport) {
-      const bImport = el('button', '', '⇪ 导入 Excel');
-      bImport.onclick = () => $('#stock-file').click();
-      bar.appendChild(bImport);
-    }
-    if (stockData.canExport) {
-      const bExport = el('button', '', '⇩ 导出 Excel');
-      bExport.onclick = exportStockExcel;
-      bar.appendChild(bExport);
-    }
-    if (stockBatch && stockData.canEdit) {
-      bar.appendChild(el('span', 'stock-hint', '勾选行 → 填售价/备注（留空不改）→ 应用所选；或直接删除所选'));
-      const iPrice = el('input', 'edit-input stock-batch-input');
-      iPrice.placeholder = '售价（留空不改）';
-      iPrice.value = stockBatch.price;
-      iPrice.oninput = () => { stockBatch.price = iPrice.value; };
-      const iNote = el('input', 'edit-input stock-batch-note');
-      iNote.placeholder = '备注（留空不改）';
-      iNote.value = stockBatch.note;
-      iNote.oninput = () => { stockBatch.note = iNote.value; };
-      const bApply = el('button', 'primary', '应用所选（' + stockBatch.selected.size + '）');
-      bApply.onclick = applyStockBatch;
-      const bDel = el('button', '', '🗑 删除所选（' + stockBatch.selected.size + '）');
+    if (stockData.canEdit && stockBatchMode === 'edit') {
+      bar.appendChild(el('span', 'stock-hint', '直接在表格里修改格子（可改多行多格），改完点「保存全部修改」一次性提交'));
+      const n = stockChangedRows().length;
+      const bSave = el('button', 'primary', '💾 保存全部修改（' + n + '）');
+      bSave.id = 'stock-save-btn';
+      bSave.onclick = saveStockBatchEdit;
+      const bCancel = el('button', '', '取消');
+      bCancel.onclick = exitStockBatch;
+      bar.appendChild(bSave);
+      bar.appendChild(bCancel);
+    } else if (stockData.canEdit && stockBatchMode === 'delete') {
+      bar.appendChild(el('span', 'stock-hint', '勾选要删除的行（支持全选），点「删除所选」一次删除'));
+      const bDel = el('button', 'danger', '🗑 删除所选（' + stockDelSel.size + '）');
+      bDel.id = 'stock-del-btn';
       bDel.onclick = deleteStockBatch;
       const bCancel = el('button', '', '取消');
-      bCancel.onclick = toggleStockBatch;
-      bar.appendChild(iPrice);
-      bar.appendChild(iNote);
-      bar.appendChild(bApply);
+      bCancel.onclick = exitStockBatch;
       bar.appendChild(bDel);
       bar.appendChild(bCancel);
-    } else if (stockData.canEdit) {
-      bar.appendChild(el('span', 'stock-hint', '点击单元格可直接修改'));
-    } else if (stockData.canImport || stockData.canExport) {
-      const perms = [stockData.canImport ? '导入' : '', stockData.canExport ? '导出' : ''].filter(Boolean).join('/');
-      bar.appendChild(el('span', 'stock-hint', '你只有' + perms + '权限，编辑请联系管理员'));
+    } else {
+      if (stockData.canEdit) {
+        const bAdd = el('button', '', '＋ 新增配件');
+        bAdd.onclick = openStockItemModal;
+        bar.appendChild(bAdd);
+        const bEdit = el('button', '', '✏️ 批量修改');
+        bEdit.onclick = enterStockBatchEdit;
+        bar.appendChild(bEdit);
+        const bDelMode = el('button', 'danger', '🗑 批量删除');
+        bDelMode.onclick = enterStockBatchDelete;
+        bar.appendChild(bDelMode);
+        bar.appendChild(el('span', 'stock-hint', '「批量修改」：直接在表格里改多个格子后一次保存'));
+      }
+      if (stockData.canImport) {
+        const bImport = el('button', '', '⇪ 导入 Excel');
+        bImport.onclick = () => $('#stock-file').click();
+        bar.appendChild(bImport);
+      }
+      if (stockData.canExport) {
+        const bExport = el('button', '', '⇩ 导出 Excel');
+        bExport.onclick = exportStockExcel;
+        bar.appendChild(bExport);
+      }
+      if (!stockData.canEdit && (stockData.canImport || stockData.canExport)) {
+        const perms = [stockData.canImport ? '导入' : '', stockData.canExport ? '导出' : ''].filter(Boolean).join('/');
+        bar.appendChild(el('span', 'stock-hint', '你只有' + perms + '权限，编辑请联系管理员'));
+      }
     }
     if (bar.children.length) box.appendChild(bar);
 
-    if (stockData.canImport && !$('#stock-file')) {
+    if (stockData.canImport && stockBatchMode === null && !$('#stock-file')) {
       const fi = el('input');
       fi.type = 'file';
       fi.id = 'stock-file';
@@ -1092,27 +1115,26 @@
     }
 
     const items = stockFiltered();
-    const heads = stockData.canSeeCost
+    // 成本价、售价仅 admin 可见（服务端不下发）；库存上传员/导出员只有 货品名称/库存量/备注 三列
+    const heads = stockData.canSeePrice
       ? ['货品名称', '库存量', '成本价', '售价', '备注']
-      : ['货品名称', '库存量', '售价', '备注'];
-    if (stockData.canEdit) heads.push('操作'); // 操作列（删除）只有 admin 可见
-    if (stockBatch) heads.unshift(''); // 批量模式勾选列
+      : ['货品名称', '库存量', '备注'];
+    if (stockBatchMode === 'delete') heads.unshift(''); // 勾选列
     const trh = el('tr');
     heads.forEach((h) => {
       let cls = '';
       if (h === '货品名称') cls = 'col-name';
       else if (h === '库存量' || h === '成本价' || h === '售价') cls = 'col-num';
-      else if (h === '操作') cls = 'col-op';
       trh.appendChild(el('th', cls, h === '' ? '' : h));
     });
-    if (stockBatch) {
-      const allSel = items.length > 0 && items.every((it) => stockBatch.selected.has(it.name));
+    if (stockBatchMode === 'delete') {
+      const allSel = items.length > 0 && items.every((it) => stockDelSel.has(it.name));
       const cbAll = el('input');
       cbAll.type = 'checkbox';
       cbAll.checked = allSel;
       cbAll.title = '全选/全不选';
       cbAll.onchange = () => {
-        items.forEach((it) => { if (cbAll.checked) stockBatch.selected.add(it.name); else stockBatch.selected.delete(it.name); });
+        items.forEach((it) => { if (cbAll.checked) stockDelSel.add(it.name); else stockDelSel.delete(it.name); });
         renderStockPage();
       };
       trh.firstChild.appendChild(cbAll);
@@ -1122,7 +1144,7 @@
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
-    items.forEach((it) => tbody.appendChild(stockRow(it)));
+    items.forEach((it) => tbody.appendChild(stockBatchMode === 'edit' ? stockEditRow(it) : stockPlainRow(it, stockBatchMode === 'delete')));
     if (!items.length) {
       const tr = el('tr');
       const td = el('td', 'modal-hint', ($('#stock-search').value || '').trim() ? '没有匹配的货品' : '库存表还是空的');
@@ -1134,159 +1156,122 @@
     box.appendChild(tbl);
   }
 
-  function stockRow(it) {
+  function stockPlainRow(it, withCheckbox) {
     const tr = el('tr');
-    const editable = stockData.canEdit;
-    if (stockBatch) {
+    if (withCheckbox) {
       const tdSel = el('td', 'num');
       const cb = el('input');
       cb.type = 'checkbox';
-      cb.checked = stockBatch.selected.has(it.name);
+      cb.checked = stockDelSel.has(it.name);
       cb.onchange = () => {
-        if (cb.checked) stockBatch.selected.add(it.name);
-        else stockBatch.selected.delete(it.name);
-        renderStockPage();
+        if (cb.checked) stockDelSel.add(it.name);
+        else stockDelSel.delete(it.name);
+        const btn = document.getElementById('stock-del-btn');
+        if (btn) btn.textContent = '🗑 删除所选（' + stockDelSel.size + '）';
       };
       tdSel.appendChild(cb);
       tr.appendChild(tdSel);
     }
-    tr.appendChild(stockCell(it, 'name', it.name, false, editable));
-    tr.appendChild(stockCell(it, 'qty', fmtQty(it.qty), true, editable));
-    if (stockData.canSeeCost) tr.appendChild(stockCell(it, 'cost', fmtCost(it.cost), true, editable));
-    tr.appendChild(stockCell(it, 'price', fmtSale(it.price), true, editable));
-    const noteTd = el('td', 'stock-note' + (editable ? ' cell-edit' : ''));
-    if (stockEdit && stockEdit.name === it.name && stockEdit.field === 'note') {
-      noteTd.appendChild(stockEditInput());
-    } else {
-      noteTd.textContent = it.note || '';
-      if (editable) {
-        noteTd.title = '点击编辑备注';
-        noteTd.onclick = () => startStockEdit(it, 'note');
-      }
-    }
-    tr.appendChild(noteTd);
-    if (stockData.canEdit) {
-      const td = el('td');
-      const del = el('button', 'hi-del', '删除');
-      del.onclick = async () => {
-        if (!confirm('确定从库存表删除「' + it.name + '」？（删除后再次导入会重新出现）')) return;
-        try { await api('POST', '/api/stock-item', { action: 'delete', name: it.name }); loadStock(); }
-        catch (e) { alert('删除失败：' + e.message); }
-      };
-      td.appendChild(del);
-      tr.appendChild(td);
-    }
+    tr.appendChild(el('td', 'col-name-t', it.name || ''));
+    tr.appendChild(el('td', 'num', fmtQty(it.qty)));
+    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtCost(it.cost)));
+    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(it.price)));
+    tr.appendChild(el('td', 'stock-note', it.note || ''));
     return tr;
   }
 
-  function toggleStockBatch() {
-    stockBatch = stockBatch ? null : { selected: new Set(), price: '', note: '' };
-    stockEdit = null;
+  function stockEditRow(orig) {
+    const e = stockEdits[orig.name];
+    const tr = el('tr');
+    tr.appendChild(el('td', 'col-name-t', (() => { const i = el('input', 'edit-input stock-cell-input wide'); i.value = e.name; i.oninput = () => { e.name = i.value; }; return i; })()));
+    tr.appendChild(el('td', 'num', (() => { const i = el('input', 'edit-input stock-cell-input'); i.value = e.qty; i.oninput = () => { e.qty = i.value; }; return i; })()));
+    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', (() => { const i = el('input', 'edit-input stock-cell-input'); i.value = e.cost; i.oninput = () => { e.cost = i.value; }; return i; })()));
+    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', (() => { const i = el('input', 'edit-input stock-cell-input'); i.value = e.price; i.oninput = () => { e.price = i.value; }; return i; })()));
+    const noteTd = el('td', 'stock-note');
+    const iNote = el('input', 'edit-input stock-cell-input wide');
+    iNote.value = e.note;
+    iNote.oninput = () => { e.note = iNote.value; };
+    noteTd.appendChild(iNote);
+    tr.appendChild(noteTd);
+    return tr;
+  }
+
+  function stockOrigRaw(it) {
+    return {
+      name: it.name,
+      qty: String(Number(it.qty) || 0),
+      cost: String(Number(it.cost) || 0),
+      price: it.price == null ? '' : String(it.price).trim(),
+      note: it.note == null ? '' : String(it.note),
+    };
+  }
+
+  function stockChangedRows() {
+    const out = [];
+    (stockData.items || []).forEach((it) => {
+      const e = stockEdits[it.name];
+      if (!e) return;
+      const orig = stockOrigRaw(it);
+      const fields = ['name', 'qty', 'cost', 'price', 'note'];
+      if (fields.some((f) => String(e[f]).trim() !== orig[f])) {
+        out.push({ name: it.name, item: { name: String(e.name).trim(), qty: e.qty, cost: e.cost, price: String(e.price).trim(), note: e.note } });
+      }
+    });
+    return out;
+  }
+
+  function enterStockBatchEdit() {
+    stockBatchMode = 'edit';
+    stockEdits = {};
+    (stockData.items || []).forEach((it) => { stockEdits[it.name] = { ...stockOrigRaw(it) }; });
     renderStockPage();
   }
 
-  async function applyStockBatch() {
-    if (!stockBatch) return;
-    const names = Array.from(stockBatch.selected);
-    if (!names.length) { alert('请先勾选要修改的行'); return; }
-    const price = stockBatch.price.trim();
-    const note = stockBatch.note.trim();
-    if (price === '' && note === '') { alert('售价和备注至少填一个（留空表示不修改）'); return; }
-    if (!confirm('把所选 ' + names.length + ' 行的' + (price !== '' ? '售价' : '') + (price !== '' && note !== '' ? '和' : '') + (note !== '' ? '备注' : '') + '统一修改？')) return;
+  function enterStockBatchDelete() {
+    stockBatchMode = 'delete';
+    stockDelSel = new Set();
+    renderStockPage();
+  }
+
+  function exitStockBatch() {
+    stockBatchMode = null;
+    stockEdits = {};
+    stockDelSel = new Set();
+    renderStockPage();
+  }
+
+  async function saveStockBatchEdit() {
+    const changes = stockChangedRows();
+    if (!changes.length) { alert('还没有改动：请先在表格里修改要调整的格子'); return; }
+    if (!confirm('保存 ' + changes.length + ' 行修改？')) return;
     try {
-      const r = await api('POST', '/api/stock-item', {
-        action: 'batch',
-        names,
-        price: price === '' ? undefined : price,
-        note: note === '' ? undefined : stockBatch.note,
-      });
-      alert('已批量修改 ' + r.changed + ' 行');
-      stockBatch = null;
+      const r = await api('POST', '/api/stock-item', { action: 'batch-save', changes });
+      alert('已保存 ' + r.applied + ' 行修改');
+      exitStockBatch();
       loadStock();
-    } catch (e) { alert('批量修改失败：' + e.message); }
+    } catch (e) { alert('保存失败：' + e.message); }
   }
 
   async function deleteStockBatch() {
-    if (!stockBatch) return;
-    const names = Array.from(stockBatch.selected);
+    const names = Array.from(stockDelSel);
     if (!names.length) { alert('请先勾选要删除的行'); return; }
     if (!confirm('确定删除所选 ' + names.length + ' 行？（删除后再次导入会重新出现）')) return;
     try {
       const r = await api('POST', '/api/stock-item', { action: 'batch-delete', names });
       alert('已删除 ' + r.deleted + ' 行');
-      stockBatch = null;
+      exitStockBatch();
       loadStock();
     } catch (e) { alert('批量删除失败：' + e.message); }
   }
 
-  function stockCell(it, field, text, num, editable) {
-    const editing = stockEdit && stockEdit.name === it.name && stockEdit.field === field;
-    const td = el('td', (num ? 'num ' : '') + (editable ? 'cell-edit' : ''));
-    if (editing) {
-      td.appendChild(stockEditInput());
-      return td;
-    }
-    td.textContent = text;
-    if (editable) {
-      td.title = '点击编辑';
-      td.onclick = () => startStockEdit(it, field);
-    }
-    return td;
-  }
-
-  function stockEditInput() {
-    const input = el('input', 'edit-input');
-    input.type = 'text';
-    input.value = stockEdit.newValue != null ? stockEdit.newValue : stockEdit.oldValue;
-    input.oninput = () => { stockEdit.newValue = input.value; };
-    input.onkeydown = (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); confirmStockEdit(); }
-      else if (e.key === 'Escape') { e.preventDefault(); cancelStockEdit(); }
-    };
-    input.onblur = () => confirmStockEdit();
-    setTimeout(() => { input.focus(); input.select(); }, 0);
-    return input;
-  }
-
-  function startStockEdit(it, field) {
-    if (!stockData || !stockData.canEdit) return;
-    if (stockEdit && stockEdit.name === it.name && stockEdit.field === field) return;
-    stockEdit = { name: it.name, field, oldValue: stockRawValue(it, field), newValue: null };
-    renderStockPage();
-  }
-
-  function cancelStockEdit() {
-    stockEdit = null;
-    renderStockPage();
-  }
-
   async function confirmStockEdit() {
-    const ed = stockEdit;
-    if (!ed) return;
-    stockEdit = null; // 先清掉，防止 blur/Enter 双提交
-    const raw = String(ed.newValue != null ? ed.newValue : ed.oldValue).trim();
-    if (raw === String(ed.oldValue).trim()) { renderStockPage(); return; }
-    const it = ((stockData && stockData.items) || []).find((x) => x.name === ed.name) || {};
-    const item = {
-      name: ed.field === 'name' ? raw : ed.name,
-      qty: ed.field === 'qty' ? raw : (Number(it.qty) || 0),
-      cost: ed.field === 'cost' ? raw : (Number(it.cost) || 0),
-      price: ed.field === 'price' ? raw : (it.price == null ? '' : it.price),
-      note: ed.field === 'note' ? raw : (it.note == null ? '' : it.note),
-    };
-    try {
-      await api('POST', '/api/stock-item', { action: 'upsert', name: ed.name, item });
-      loadStock();
-    } catch (e) {
-      alert('保存失败：' + e.message);
-      renderStockPage();
-    }
+    // 已由批量修改取代（保留空实现避免遗留调用报错）
   }
 
   function openStockItemModal() {
     openModal('新增库存配件');
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '新增一行库存（五列都可填；售价/备注可留空，之后点击表格单元格修改）。'));
+    body.appendChild(el('div', 'modal-hint', '新增一行库存（五列都可填；售价/备注可留空，之后用「批量修改」调整）。'));
     const mk = (ph) => { const i = el('input'); i.placeholder = ph; body.appendChild(i); return i; };
     const iName = mk('货品名称（必填）');
     const iQty = mk('库存量（如 40）');
@@ -1351,8 +1336,9 @@
   }
 
   // ---------- 应收明细（每人只看自己经手的数据） ----------
-  let recvData = null;   // GET /api/receivables 结果 {rows, handlers, lastImportAt, lastImportBy, canImport, isAdmin}
-  let recvFilter = '';   // admin 的经手人筛选（''=全部）
+  let recvData = null;   // GET /api/receivables 结果 {rows(含id), handlers, lastImportAt, lastImportBy, canImport, canViewAll}
+  let recvFilter = '';   // 经手人筛选（''=全部；仅 admin/库存上传员）
+  let recvSel = new Set(); // 勾选的行 id（选择性导出；空=导出当前范围全部）
 
   async function loadRecv() {
     const box = $('#recv-content');
@@ -1360,6 +1346,7 @@
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
       recvData = await api('GET', '/api/receivables');
+    recvSel = new Set();
     } catch (e) {
       box.innerHTML = '';
       box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
@@ -1375,7 +1362,7 @@
 
   function recvVisible() {
     const rows = (recvData && recvData.rows) || [];
-    if (!recvData.isAdmin || !recvFilter) return rows;
+    if (!recvData.canViewAll || !recvFilter) return rows;
     return rows.filter((r) => r.handler === recvFilter); // admin 按经手人筛选
   }
 
@@ -1393,7 +1380,7 @@
     // admin 的经手人筛选
     const filterBox = $('#recv-filter');
     filterBox.innerHTML = '';
-    if (recvData.isAdmin && recvData.handlers && recvData.handlers.length) {
+    if (recvData.canViewAll && recvData.handlers && recvData.handlers.length) {
       const sel = el('select', 'recv-handler-sel');
       const optAll = el('option', '', '全部经手人');
       optAll.value = '';
@@ -1414,12 +1401,12 @@
       bImport.onclick = () => $('#recv-file').click();
       bar.appendChild(bImport);
     }
-    const bExport = el('button', '', '⇩ 导出 Excel');
+    const bExport = el('button', 'primary', '⇩ 导出 Excel' + (recvSel.size ? '（已选 ' + recvSel.size + '）' : ''));
     bExport.onclick = exportRecvExcel;
     bar.appendChild(bExport);
-    bar.appendChild(el('span', 'stock-hint', recvData.isAdmin
-      ? '你看到的是全部经手人的明细' + (recvFilter ? '（经手人：' + recvFilter + '）' : '') + '，导出跟随当前筛选'
-      : '你只看到自己经手的明细'));
+    bar.appendChild(el('span', 'stock-hint', recvData.canViewAll
+      ? '你看到的是全部经手人的明细' + (recvFilter ? '（经手人：' + recvFilter + '）' : '') + '；勾选行后只导出勾选的行，不勾选=导出当前范围'
+      : '你只看到自己经手的明细；勾选行后只导出勾选的行，不勾选=全部导出'));
     box.appendChild(bar);
 
     if (recvData.canImport && !$('#recv-file')) {
@@ -1436,6 +1423,17 @@
     const heads = ['日期', '往来客户', '货品名称', '交易数量', '交易单价', '应收增加', '附加说明', '经手人'];
     const tbl = el('table', 'stock-table recv-table');
     const trh = el('tr');
+    const thSel = el('th', 'col-check');
+    const cbAll = el('input');
+    cbAll.type = 'checkbox';
+    cbAll.checked = rows.length > 0 && rows.every((r) => recvSel.has(r.id));
+    cbAll.title = '全选/全不选（选择性导出）';
+    cbAll.onchange = () => {
+      rows.forEach((r) => { if (cbAll.checked) recvSel.add(r.id); else recvSel.delete(r.id); });
+      renderRecvPage();
+    };
+    thSel.appendChild(cbAll);
+    trh.appendChild(thSel);
     heads.forEach((h) => {
       let cls = '';
       if (h === '日期') cls = 'col-date';
@@ -1451,6 +1449,17 @@
     const tbody = el('tbody');
     rows.forEach((r) => {
       const tr = el('tr');
+      const tdSel = el('td', 'num');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = recvSel.has(r.id);
+      cb.onchange = () => {
+        if (cb.checked) recvSel.add(r.id);
+        else recvSel.delete(r.id);
+        bExport.textContent = '⇩ 导出 Excel' + (recvSel.size ? '（已选 ' + recvSel.size + '）' : '');
+      };
+      tdSel.appendChild(cb);
+      tr.appendChild(tdSel);
       tr.appendChild(el('td', 'col-date-t', r.date || ''));
       tr.appendChild(el('td', '', r.client || ''));
       tr.appendChild(el('td', '', r.item || ''));
@@ -1465,15 +1474,15 @@
     if (!rows.length) {
       const tr = el('tr');
       const td = el('td', 'modal-hint', '没有你经手的应收明细（数据由管理员/库存上传员导入，经手人需与账号名完全一致）');
-      td.colSpan = heads.length;
+      td.colSpan = heads.length + 1;
       tr.appendChild(td);
       tbody.appendChild(tr);
     } else {
-      // 表格底部合计：当前查看范围（本人 / admin 筛选的经手人）的应收增加求和
+      // 表格底部合计：当前查看范围（本人 / 筛选的经手人）的应收增加求和
       const sum = rows.reduce((acc, r) => acc + (Number(r.amount) || 0), 0);
       const tr = el('tr', 'qc-total-row');
       const tdLabel = el('td', 'num', '合计');
-      tdLabel.colSpan = 5;
+      tdLabel.colSpan = 6;
       tr.appendChild(tdLabel);
       tr.appendChild(el('td', 'num qc-total-num', fmtAmount(Math.round(sum * 10000) / 10000)));
       tr.appendChild(el('td', '', ''));
@@ -1507,7 +1516,9 @@
 
   async function exportRecvExcel() {
     try {
-      const r = await api('POST', '/api/receivables-export', { handler: recvData && recvData.isAdmin ? recvFilter : '' });
+      const payload = { handler: recvData && recvData.canViewAll ? recvFilter : '' };
+      if (recvSel.size) payload.ids = Array.from(recvSel); // 勾选了行 → 只导出勾选的
+      const r = await api('POST', '/api/receivables-export', payload);
       const bin = atob(r.dataBase64);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -2504,6 +2515,7 @@
           row.appendChild(el('span', 'u-name', u.username));
           const roleSel = el('select', 'u-role');
           Object.keys(ROLE_LABELS).forEach((rk) => {
+            if (rk === 'admin') return; // 系统仅一个管理员，不提供管理员选项
             const opt = el('option', '', ROLE_LABELS[rk]);
             opt.value = rk;
             roleSel.appendChild(opt);
