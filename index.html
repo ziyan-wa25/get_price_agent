@@ -30,6 +30,7 @@
       <button id="new-chat" class="new-chat-btn">＋ 新建报价</button>
       <button id="btn-prices" class="side-btn price-entry">📋 配件价格表</button>
       <button id="btn-stock" class="side-btn">📦 库存表</button>
+      <button id="btn-recv" class="side-btn">🧾 应收明细</button>
       <div class="side-label">历史报价</div>
       <div id="history-list" class="history-list"></div>
       <div class="side-footer">
@@ -64,6 +65,14 @@
           <input id="stock-search" class="price-search" placeholder="搜索货品名称">
         </div>
         <div id="stock-content" class="price-content"></div>
+      </div>
+      <!-- 应收明细页（每人只看自己经手的数据） -->
+      <div id="recv-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="recv-info" class="stock-info"></div>
+          <div id="recv-filter" class="recv-filter"></div>
+        </div>
+        <div id="recv-content" class="price-content"></div>
       </div>
     </main>
   </div>

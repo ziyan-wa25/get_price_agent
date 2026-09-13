@@ -397,3 +397,17 @@ tr.batch-del td { background: #fff5f5; }
   padding: 4px 6px; margin-right: 12px; background: #fff; color: #333;
 }
 .user-row select.u-role:disabled { color: #999; background: #f7f8fa; border-color: #eef0f2; }
+
+/* ===== 应收明细（每人只看自己经手的数据） ===== */
+.recv-filter { display: flex; align-items: center; gap: 6px; }
+.recv-handler-sel {
+  border: 1px solid #d9dce1; border-radius: 6px; font-size: 12.5px;
+  padding: 5px 8px; background: #fff; color: #333;
+}
+/* 列宽：日期窄、客户/货品适中、附加说明占满剩余宽度 */
+.recv-table .col-date { width: 100px; }
+.recv-table .col-client { width: 210px; }
+.recv-table .col-item { width: 250px; }
+.recv-table .col-num { width: 92px; }
+.recv-table .col-op { width: 92px; }
+.recv-table td { max-width: 420px; }

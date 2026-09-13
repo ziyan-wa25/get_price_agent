@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-2（库存表/岗位体系/历史可编辑/两段式新建/自动重试）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-3（应收明细/库存表/岗位体系/历史可编辑/自动重试）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   let token = localStorage.getItem('qa_token') || '';
@@ -1350,6 +1350,177 @@
     } catch (e) { alert('导出失败：' + e.message); }
   }
 
+  // ---------- 应收明细（每人只看自己经手的数据） ----------
+  let recvData = null;   // GET /api/receivables 结果 {rows, handlers, lastImportAt, lastImportBy, canImport, isAdmin}
+  let recvFilter = '';   // admin 的经手人筛选（''=全部）
+
+  async function loadRecv() {
+    const box = $('#recv-content');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      recvData = await api('GET', '/api/receivables');
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+      return;
+    }
+    renderRecvPage();
+  }
+
+  function fmtAmount(n) {
+    const x = Number(n) || 0;
+    return Number.isInteger(x) ? x.toLocaleString('zh-CN') : String(Math.round(x * 10000) / 10000);
+  }
+
+  function recvVisible() {
+    const rows = (recvData && recvData.rows) || [];
+    if (!recvData.isAdmin || !recvFilter) return rows;
+    return rows.filter((r) => r.handler === recvFilter); // admin 按经手人筛选
+  }
+
+  function renderRecvPage() {
+    const box = $('#recv-content');
+    box.innerHTML = '';
+    if (!recvData) return;
+    const info = $('#recv-info');
+    info.innerHTML = '';
+    const t = recvData.lastImportAt
+      ? new Date(recvData.lastImportAt).toLocaleString('zh-CN') + (recvData.lastImportBy ? '（' + recvData.lastImportBy + '）' : '')
+      : '尚未导入过';
+    info.appendChild(el('span', 'stock-import-time', '🕐 最近一次导入：' + t));
+
+    // admin 的经手人筛选
+    const filterBox = $('#recv-filter');
+    filterBox.innerHTML = '';
+    if (recvData.isAdmin && recvData.handlers && recvData.handlers.length) {
+      const sel = el('select', 'recv-handler-sel');
+      const optAll = el('option', '', '全部经手人');
+      optAll.value = '';
+      sel.appendChild(optAll);
+      recvData.handlers.forEach((h) => {
+        const opt = el('option', '', h);
+        opt.value = h;
+        sel.appendChild(opt);
+      });
+      sel.value = recvFilter;
+      sel.onchange = () => { recvFilter = sel.value; renderRecvPage(); };
+      filterBox.appendChild(sel);
+    }
+
+    const bar = el('div', 'stock-toolbar');
+    if (recvData.canImport) {
+      const bImport = el('button', '', '⇪ 导入 Excel');
+      bImport.onclick = () => $('#recv-file').click();
+      bar.appendChild(bImport);
+    }
+    const bExport = el('button', '', '⇩ 导出 Excel');
+    bExport.onclick = exportRecvExcel;
+    bar.appendChild(bExport);
+    bar.appendChild(el('span', 'stock-hint', recvData.isAdmin
+      ? '你看到的是全部经手人的明细' + (recvFilter ? '（经手人：' + recvFilter + '）' : '') + '，导出跟随当前筛选'
+      : '你只看到自己经手的明细'));
+    box.appendChild(bar);
+
+    if (recvData.canImport && !$('#recv-file')) {
+      const fi = el('input');
+      fi.type = 'file';
+      fi.id = 'recv-file';
+      fi.accept = '.xls,.xlsx';
+      fi.classList.add('hidden');
+      fi.onchange = onRecvFilePicked;
+      box.appendChild(fi);
+    }
+
+    const rows = recvVisible();
+    const heads = ['日期', '往来客户', '货品名称', '交易数量', '交易单价', '应收增加', '附加说明', '经手人'];
+    const tbl = el('table', 'stock-table recv-table');
+    const trh = el('tr');
+    heads.forEach((h) => {
+      let cls = '';
+      if (h === '日期') cls = 'col-date';
+      else if (h === '往来客户') cls = 'col-client';
+      else if (h === '货品名称') cls = 'col-item';
+      else if (h === '交易数量' || h === '交易单价' || h === '应收增加') cls = 'col-num';
+      else if (h === '经手人') cls = 'col-op';
+      trh.appendChild(el('th', cls, h));
+    });
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    rows.forEach((r) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', 'col-date-t', r.date || ''));
+      tr.appendChild(el('td', '', r.client || ''));
+      tr.appendChild(el('td', '', r.item || ''));
+      tr.appendChild(el('td', 'num', fmtAmount(r.qty)));
+      tr.appendChild(el('td', 'num', fmtAmount(r.price)));
+      tr.appendChild(el('td', 'num', fmtAmount(r.amount)));
+      const noteTd = el('td', 'stock-note', r.note || '');
+      tr.appendChild(noteTd);
+      tr.appendChild(el('td', 'num', r.handler || ''));
+      tbody.appendChild(tr);
+    });
+    if (!rows.length) {
+      const tr = el('tr');
+      const td = el('td', 'modal-hint', '没有你经手的应收明细（数据由管理员/库存上传员导入，经手人需与账号名完全一致）');
+      td.colSpan = heads.length;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    } else {
+      // 表格底部合计：当前查看范围（本人 / admin 筛选的经手人）的应收增加求和
+      const sum = rows.reduce((acc, r) => acc + (Number(r.amount) || 0), 0);
+      const tr = el('tr', 'qc-total-row');
+      const tdLabel = el('td', 'num', '合计');
+      tdLabel.colSpan = 5;
+      tr.appendChild(tdLabel);
+      tr.appendChild(el('td', 'num qc-total-num', fmtAmount(Math.round(sum * 10000) / 10000)));
+      tr.appendChild(el('td', '', ''));
+      tr.appendChild(el('td', '', ''));
+      tbody.appendChild(tr);
+    }
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+  }
+
+  async function onRecvFilePicked(e) {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!confirm('导入将清空现有全部应收明细，并替换为该文件的内容（没有经手人的行不会导入）。确定继续？')) return;
+    let b64;
+    try {
+      b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+        r.onerror = () => reject(new Error('读取文件失败'));
+        r.readAsDataURL(f);
+      });
+    } catch (err) { alert(err.message); return; }
+    try {
+      const r = await api('POST', '/api/receivables-import', { dataBase64: b64 });
+      alert('导入完成：共 ' + r.total + ' 行（没有经手人的行已跳过，原有数据已被替换）');
+      loadRecv();
+    } catch (err) { alert('导入失败：' + err.message); }
+  }
+
+  async function exportRecvExcel() {
+    try {
+      const r = await api('POST', '/api/receivables-export', { handler: recvData && recvData.isAdmin ? recvFilter : '' });
+      const bin = atob(r.dataBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = el('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = r.filename || '应收明细导出.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    } catch (e) { alert('导出失败：' + e.message); }
+  }
+
   async function loadHistory() {
     try {
       const r = await api('GET', '/api/history');
@@ -1401,10 +1572,13 @@
     $('#chat-page').classList.toggle('hidden', p !== 'chat');
     $('#price-page').classList.toggle('hidden', p !== 'price');
     $('#stock-page').classList.toggle('hidden', p !== 'stock');
+    $('#recv-page').classList.toggle('hidden', p !== 'recv');
     $('#btn-prices').classList.toggle('active', p === 'price');
     $('#btn-stock').classList.toggle('active', p === 'stock');
+    $('#btn-recv').classList.toggle('active', p === 'recv');
     if (p === 'price') loadPriceData();
     if (p === 'stock') loadStock();
+    if (p === 'recv') loadRecv();
   }
 
   let priceEdit = null; // 价格表改价进行中 {name, value}
@@ -2419,6 +2593,7 @@
   };
   $('#btn-prices').onclick = () => showPage('price');
   $('#btn-stock').onclick = () => showPage('stock');
+  $('#btn-recv').onclick = () => showPage('recv');
   $('#stock-search').oninput = () => renderStockPage();
   $('#btn-logout').onclick = () => doLogout(false);
   $('#btn-admin').onclick = openAdminModal;
