@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-5（库存批量改/权限收紧/应收勾选导出）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-6（批量修改输入框修复）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   let token = localStorage.getItem('qa_token') || '';
@@ -1180,18 +1180,33 @@
     return tr;
   }
 
+  function stockCellInput(value, oninput, wide) {
+    const i = el('input', 'edit-input stock-cell-input' + (wide ? ' wide' : ''));
+    i.value = value;
+    i.oninput = oninput;
+    return i;
+  }
+
   function stockEditRow(orig) {
     const e = stockEdits[orig.name];
     const tr = el('tr');
-    tr.appendChild(el('td', 'col-name-t', (() => { const i = el('input', 'edit-input stock-cell-input wide'); i.value = e.name; i.oninput = () => { e.name = i.value; }; return i; })()));
-    tr.appendChild(el('td', 'num', (() => { const i = el('input', 'edit-input stock-cell-input'); i.value = e.qty; i.oninput = () => { e.qty = i.value; }; return i; })()));
-    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', (() => { const i = el('input', 'edit-input stock-cell-input'); i.value = e.cost; i.oninput = () => { e.cost = i.value; }; return i; })()));
-    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', (() => { const i = el('input', 'edit-input stock-cell-input'); i.value = e.price; i.oninput = () => { e.price = i.value; }; return i; })()));
+    // 注意：el() 第三参数会变成 textContent，元素必须用 appendChild 挂进去
+    const tdName = el('td', 'col-name-t');
+    tdName.appendChild(stockCellInput(e.name, (ev) => { e.name = ev.target.value; }, true));
+    tr.appendChild(tdName);
+    const tdQty = el('td', 'num');
+    tdQty.appendChild(stockCellInput(e.qty, (ev) => { e.qty = ev.target.value; }));
+    tr.appendChild(tdQty);
+    if (stockData.canSeePrice) {
+      const tdCost = el('td', 'num');
+      tdCost.appendChild(stockCellInput(e.cost, (ev) => { e.cost = ev.target.value; }));
+      tr.appendChild(tdCost);
+      const tdPrice = el('td', 'num');
+      tdPrice.appendChild(stockCellInput(e.price, (ev) => { e.price = ev.target.value; }));
+      tr.appendChild(tdPrice);
+    }
     const noteTd = el('td', 'stock-note');
-    const iNote = el('input', 'edit-input stock-cell-input wide');
-    iNote.value = e.note;
-    iNote.oninput = () => { e.note = iNote.value; };
-    noteTd.appendChild(iNote);
+    noteTd.appendChild(stockCellInput(e.note, (ev) => { e.note = ev.target.value; }, true));
     tr.appendChild(noteTd);
     return tr;
   }
