@@ -377,8 +377,20 @@ tr.batch-del td { background: #fff5f5; }
 .stock-import-time { color: #666; font-size: 12.5px; }
 .stock-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
 .stock-hint { color: #999; font-size: 12px; }
-/* 备注列：自动换行 */
-.stock-note { white-space: pre-wrap; word-break: break-word; max-width: 320px; }
+.stock-batch-input { width: 140px; }
+/* 表格格子线：每格有完整边框，格内文字居中 */
+.price-content .stock-table th, .price-content .stock-table td {
+  border: 1px solid #e3e5e9;
+  text-align: center;
+  vertical-align: middle;
+}
+.price-content .stock-table th { background: #f7f8fa; }
+/* 列宽：货品名称窄、备注列自动占满剩余宽度 */
+.stock-table .col-name { width: 220px; }
+.stock-table .col-num { width: 90px; }
+.stock-table .col-op { width: 72px; }
+/* 备注列：自动换行，占满剩余宽度 */
+.stock-note { white-space: pre-wrap; word-break: break-word; }
 /* 账号管理里的岗位下拉 */
 .user-row select.u-role {
   border: 1px solid #d9dce1; border-radius: 6px; font-size: 12.5px;
