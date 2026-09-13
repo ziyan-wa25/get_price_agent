@@ -371,3 +371,17 @@ tr.batch-del td { background: #fff5f5; }
 /* 报价表合计金额行 */
 .qc-total-row td { border-top: 2px solid #d9dce1; font-weight: 600; background: #fbfbfc; }
 .qc-total-num { color: #d93025; font-size: 14px; }
+
+/* ===== 库存表（独立于报价） ===== */
+.stock-info { flex: 1; min-width: 260px; }
+.stock-import-time { color: #666; font-size: 12.5px; }
+.stock-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.stock-hint { color: #999; font-size: 12px; }
+/* 备注列：自动换行 */
+.stock-note { white-space: pre-wrap; word-break: break-word; max-width: 320px; }
+/* 账号管理里的岗位下拉 */
+.user-row select.u-role {
+  border: 1px solid #d9dce1; border-radius: 6px; font-size: 12.5px;
+  padding: 4px 6px; margin-right: 12px; background: #fff; color: #333;
+}
+.user-row select.u-role:disabled { color: #999; background: #f7f8fa; border-color: #eef0f2; }

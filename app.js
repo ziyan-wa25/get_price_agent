@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-1（历史报价可编辑 / 新建报价两段式 / 输出自动重试 / 单价数量点击改）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-2（库存表/岗位体系/历史可编辑/两段式新建/自动重试）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   let token = localStorage.getItem('qa_token') || '';
@@ -975,6 +975,281 @@
   }
 
   // ---------- 历史 ----------
+  // ---------- 库存表（独立于报价/LLM） ----------
+  const ROLE_LABELS = { admin: '管理员', user: '普通用户', uploader: '库存上传员', exporter: '库存导出员' };
+  let stockData = null;  // GET /api/stock 结果：{items, lastImportAt, lastImportBy, canSeeCost, canImport, canExport, canEdit}
+  let stockEdit = null;  // 进行中的单元格编辑 {name, field, oldValue, newValue}
+
+  async function loadStock() {
+    const box = $('#stock-content');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      stockData = await api('GET', '/api/stock');
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+      return;
+    }
+    renderStockPage();
+  }
+
+  function stockFiltered() {
+    const kw = ($('#stock-search').value || '').trim().toLowerCase();
+    const items = (stockData && stockData.items) || [];
+    if (!kw) return items;
+    return items.filter((it) => String(it.name).toLowerCase().indexOf(kw) !== -1
+      || String(it.note || '').toLowerCase().indexOf(kw) !== -1);
+  }
+
+  function fmtQty(n) { const x = Number(n) || 0; return Number.isInteger(x) ? x.toLocaleString('zh-CN') : String(x); }
+  function fmtCost(n) { const x = Number(n) || 0; return x ? '¥ ' + x.toLocaleString('zh-CN', { maximumFractionDigits: 4 }) : '—'; }
+  function fmtSale(p) {
+    const s = String(p == null ? '' : p).trim();
+    if (!s) return '—';
+    const x = Number(s);
+    return Number.isFinite(x) ? '¥ ' + x.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) : s;
+  }
+
+  function stockRawValue(it, field) {
+    if (field === 'name') return it.name;
+    if (field === 'qty') return String(Number(it.qty) || 0);
+    if (field === 'cost') return String(Number(it.cost) || 0);
+    if (field === 'price') return String(it.price == null ? '' : it.price);
+    return String(it.note == null ? '' : it.note);
+  }
+
+  function renderStockPage() {
+    const box = $('#stock-content');
+    box.innerHTML = '';
+    if (!stockData) return;
+    const info = $('#stock-info');
+    info.innerHTML = '';
+    const t = stockData.lastImportAt
+      ? new Date(stockData.lastImportAt).toLocaleString('zh-CN') + (stockData.lastImportBy ? '（' + stockData.lastImportBy + '）' : '')
+      : '尚未导入过';
+    info.appendChild(el('span', 'stock-import-time', '🕐 最近一次导入：' + t));
+
+    const bar = el('div', 'stock-toolbar');
+    if (stockData.canEdit) {
+      const bAdd = el('button', '', '＋ 新增配件');
+      bAdd.onclick = openStockItemModal;
+      bar.appendChild(bAdd);
+    }
+    if (stockData.canImport) {
+      const bImport = el('button', '', '⇪ 导入 Excel');
+      bImport.onclick = () => $('#stock-file').click();
+      bar.appendChild(bImport);
+    }
+    if (stockData.canExport) {
+      const bExport = el('button', '', '⇩ 导出 Excel');
+      bExport.onclick = exportStockExcel;
+      bar.appendChild(bExport);
+    }
+    if (stockData.canEdit) bar.appendChild(el('span', 'stock-hint', '点击单元格可直接修改'));
+    else if (stockData.canImport || stockData.canExport) {
+      const perms = [stockData.canImport ? '导入' : '', stockData.canExport ? '导出' : ''].filter(Boolean).join('/');
+      bar.appendChild(el('span', 'stock-hint', '你只有' + perms + '权限，编辑请联系管理员'));
+    }
+    if (bar.children.length) box.appendChild(bar);
+
+    if (stockData.canImport && !$('#stock-file')) {
+      const fi = el('input');
+      fi.type = 'file';
+      fi.id = 'stock-file';
+      fi.accept = '.xls,.xlsx';
+      fi.classList.add('hidden');
+      fi.onchange = onStockFilePicked;
+      box.appendChild(fi);
+    }
+
+    const items = stockFiltered();
+    const heads = stockData.canSeeCost
+      ? ['货品名称', '库存量', '成本价', '售价', '备注']
+      : ['货品名称', '库存量', '售价', '备注'];
+    if (stockData.canEdit) heads.push('操作');
+    const tbl = el('table', 'stock-table');
+    const trh = el('tr');
+    heads.forEach((h, i) => trh.appendChild(el('th', i >= 1 && h !== '备注' && h !== '操作' ? 'num' : '', h)));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    items.forEach((it) => tbody.appendChild(stockRow(it)));
+    if (!items.length) {
+      const tr = el('tr');
+      const td = el('td', 'modal-hint', ($('#stock-search').value || '').trim() ? '没有匹配的货品' : '库存表还是空的');
+      td.colSpan = heads.length;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+  }
+
+  function stockRow(it) {
+    const tr = el('tr');
+    const editable = stockData.canEdit;
+    tr.appendChild(stockCell(it, 'name', it.name, false, editable));
+    tr.appendChild(stockCell(it, 'qty', fmtQty(it.qty), true, editable));
+    if (stockData.canSeeCost) tr.appendChild(stockCell(it, 'cost', fmtCost(it.cost), true, editable));
+    tr.appendChild(stockCell(it, 'price', fmtSale(it.price), true, editable));
+    const noteTd = el('td', 'stock-note' + (editable ? ' cell-edit' : ''));
+    if (stockEdit && stockEdit.name === it.name && stockEdit.field === 'note') {
+      noteTd.appendChild(stockEditInput());
+    } else {
+      noteTd.textContent = it.note || '';
+      if (editable) {
+        noteTd.title = '点击编辑备注';
+        noteTd.onclick = () => startStockEdit(it, 'note');
+      }
+    }
+    tr.appendChild(noteTd);
+    if (stockData.canEdit) {
+      const td = el('td');
+      const del = el('button', 'hi-del', '删除');
+      del.onclick = async () => {
+        if (!confirm('确定从库存表删除「' + it.name + '」？（删除后再次导入会重新出现）')) return;
+        try { await api('POST', '/api/stock-item', { action: 'delete', name: it.name }); loadStock(); }
+        catch (e) { alert('删除失败：' + e.message); }
+      };
+      td.appendChild(del);
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+
+  function stockCell(it, field, text, num, editable) {
+    const editing = stockEdit && stockEdit.name === it.name && stockEdit.field === field;
+    const td = el('td', (num ? 'num ' : '') + (editable ? 'cell-edit' : ''));
+    if (editing) {
+      td.appendChild(stockEditInput());
+      return td;
+    }
+    td.textContent = text;
+    if (editable) {
+      td.title = '点击编辑';
+      td.onclick = () => startStockEdit(it, field);
+    }
+    return td;
+  }
+
+  function stockEditInput() {
+    const input = el('input', 'edit-input');
+    input.type = 'text';
+    input.value = stockEdit.newValue != null ? stockEdit.newValue : stockEdit.oldValue;
+    input.oninput = () => { stockEdit.newValue = input.value; };
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); confirmStockEdit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancelStockEdit(); }
+    };
+    input.onblur = () => confirmStockEdit();
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+    return input;
+  }
+
+  function startStockEdit(it, field) {
+    if (!stockData || !stockData.canEdit) return;
+    if (stockEdit && stockEdit.name === it.name && stockEdit.field === field) return;
+    stockEdit = { name: it.name, field, oldValue: stockRawValue(it, field), newValue: null };
+    renderStockPage();
+  }
+
+  function cancelStockEdit() {
+    stockEdit = null;
+    renderStockPage();
+  }
+
+  async function confirmStockEdit() {
+    const ed = stockEdit;
+    if (!ed) return;
+    stockEdit = null; // 先清掉，防止 blur/Enter 双提交
+    const raw = String(ed.newValue != null ? ed.newValue : ed.oldValue).trim();
+    if (raw === String(ed.oldValue).trim()) { renderStockPage(); return; }
+    const it = ((stockData && stockData.items) || []).find((x) => x.name === ed.name) || {};
+    const item = {
+      name: ed.field === 'name' ? raw : ed.name,
+      qty: ed.field === 'qty' ? raw : (Number(it.qty) || 0),
+      cost: ed.field === 'cost' ? raw : (Number(it.cost) || 0),
+      price: ed.field === 'price' ? raw : (it.price == null ? '' : it.price),
+      note: ed.field === 'note' ? raw : (it.note == null ? '' : it.note),
+    };
+    try {
+      await api('POST', '/api/stock-item', { action: 'upsert', name: ed.name, item });
+      loadStock();
+    } catch (e) {
+      alert('保存失败：' + e.message);
+      renderStockPage();
+    }
+  }
+
+  function openStockItemModal() {
+    openModal('新增库存配件');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '新增一行库存（五列都可填；售价/备注可留空，之后点击表格单元格修改）。'));
+    const mk = (ph) => { const i = el('input'); i.placeholder = ph; body.appendChild(i); return i; };
+    const iName = mk('货品名称（必填）');
+    const iQty = mk('库存量（如 40）');
+    const iCost = mk('成本价（如 530）');
+    const iPrice = mk('售价（可留空）');
+    const iNote = mk('备注（可留空）');
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', '保存');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    bOk.onclick = async () => {
+      const name = iName.value.trim();
+      if (!name) { alert('请输入货品名称'); return; }
+      try {
+        await api('POST', '/api/stock-item', {
+          action: 'upsert', name: '',
+          item: { name, qty: iQty.value, cost: iCost.value, price: iPrice.value, note: iNote.value },
+        });
+        closeModal();
+        loadStock();
+      } catch (e) { alert('保存失败：' + e.message); }
+    };
+    foot.appendChild(bOk);
+    foot.appendChild(bCancel);
+    body.appendChild(foot);
+  }
+
+  async function onStockFilePicked(e) {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    let b64;
+    try {
+      b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+        r.onerror = () => reject(new Error('读取文件失败'));
+        r.readAsDataURL(f);
+      });
+    } catch (err) { alert(err.message); return; }
+    try {
+      const r = await api('POST', '/api/stock-import', { dataBase64: b64 });
+      alert('导入完成：共 ' + r.total + ' 行（更新 ' + r.updated + '，新增 ' + r.added + '，库存清零 ' + r.zeroed + '）');
+      loadStock();
+    } catch (err) { alert('导入失败：' + err.message); }
+  }
+
+  async function exportStockExcel() {
+    try {
+      const r = await api('POST', '/api/stock-export', {});
+      const bin = atob(r.dataBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = el('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = r.filename || '库存导出.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    } catch (e) { alert('导出失败：' + e.message); }
+  }
+
   async function loadHistory() {
     try {
       const r = await api('GET', '/api/history');
@@ -1025,8 +1300,11 @@
   function showPage(p) {
     $('#chat-page').classList.toggle('hidden', p !== 'chat');
     $('#price-page').classList.toggle('hidden', p !== 'price');
+    $('#stock-page').classList.toggle('hidden', p !== 'stock');
     $('#btn-prices').classList.toggle('active', p === 'price');
+    $('#btn-stock').classList.toggle('active', p === 'stock');
     if (p === 'price') loadPriceData();
+    if (p === 'stock') loadStock();
   }
 
   let priceEdit = null; // 价格表改价进行中 {name, value}
@@ -1937,7 +2215,7 @@
     const btnAdd = el('button', '', '添加账号');
     form.appendChild(inUser); form.appendChild(inPass); form.appendChild(btnAdd);
     body.appendChild(form);
-    const hint = el('div', 'modal-hint', '说明：删除账号后，该账号立即失去所有权限，其历史报价一并删除。管理员账号不可删除。');
+    const hint = el('div', 'modal-hint', '岗位说明：管理员=全部权限（含库存编辑/成本价）；普通用户=报价与查看库存（无成本价）；库存上传员=可导入库存；库存导出员=可导出库存。删除账号后，该账号立即失去所有权限，其历史报价一并删除。管理员账号不可删除、不可改岗位。');
     body.appendChild(hint);
 
     const listBox = el('div');
@@ -1950,7 +2228,29 @@
         (r.users || []).forEach((u) => {
           const row = el('div', 'user-row');
           row.appendChild(el('span', 'u-name', u.username));
-          row.appendChild(el('span', 'u-role', u.role === 'admin' ? '管理员' : '普通用户'));
+          const roleSel = el('select', 'u-role');
+          Object.keys(ROLE_LABELS).forEach((rk) => {
+            const opt = el('option', '', ROLE_LABELS[rk]);
+            opt.value = rk;
+            roleSel.appendChild(opt);
+          });
+          roleSel.value = u.role;
+          if (u.username === me.username) {
+            roleSel.disabled = true;
+            roleSel.title = '不能修改自己的岗位';
+          } else if (u.role === 'admin') {
+            roleSel.disabled = true;
+            roleSel.title = '管理员账号不能改岗位';
+          } else {
+            roleSel.onchange = async () => {
+              if (!confirm('把「' + u.username + '」的岗位改为「' + ROLE_LABELS[roleSel.value] + '」？')) { roleSel.value = u.role; return; }
+              try {
+                await api('POST', '/api/users-role', { username: u.username, role: roleSel.value });
+                refresh();
+              } catch (e) { alert('修改失败：' + e.message); roleSel.value = u.role; }
+            };
+          }
+          row.appendChild(roleSel);
           const del = el('button', 'u-del', '删除');
           if (u.role === 'admin') { del.disabled = true; del.textContent = '不可删除'; }
           del.onclick = async () => {
@@ -2018,6 +2318,8 @@
     newChat();
   };
   $('#btn-prices').onclick = () => showPage('price');
+  $('#btn-stock').onclick = () => showPage('stock');
+  $('#stock-search').oninput = () => renderStockPage();
   $('#btn-logout').onclick = () => doLogout(false);
   $('#btn-admin').onclick = openAdminModal;
   $('#btn-change-pass').onclick = openChangePassModal;

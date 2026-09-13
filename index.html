@@ -29,6 +29,7 @@
       <div class="side-title">🛠️ 鑫潮海报价系统</div>
       <button id="new-chat" class="new-chat-btn">＋ 新建报价</button>
       <button id="btn-prices" class="side-btn price-entry">📋 配件价格表</button>
+      <button id="btn-stock" class="side-btn">📦 库存表</button>
       <div class="side-label">历史报价</div>
       <div id="history-list" class="history-list"></div>
       <div class="side-footer">
@@ -55,6 +56,14 @@
           <input id="price-search" class="price-search" placeholder="搜索：型号 / 容量 / 接口 等关键词">
         </div>
         <div id="price-content" class="price-content"></div>
+      </div>
+      <!-- 库存表页（与报价无关） -->
+      <div id="stock-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="stock-info" class="stock-info"></div>
+          <input id="stock-search" class="price-search" placeholder="搜索货品名称">
+        </div>
+        <div id="stock-content" class="price-content"></div>
       </div>
     </main>
   </div>
