@@ -1884,11 +1884,47 @@
     const foot = el('div', 'form-row');
     const b1 = el('button', '', '复制简洁版');
     const b2 = el('button', '', '复制复杂版');
+    const bEdit = el('button', 'primary', '✏️ 编辑这份报价');
+    bEdit.title = '按刚生成报价时的形式打开：可改配件、价格、数量、插入删除，改完可另存为新历史';
+    bEdit.onclick = () => openHistoryEditable(h);
     b1.onclick = () => copyText(h.simple, b1);
     b2.onclick = () => copyText(h.detail, b2);
+    foot.appendChild(bEdit);
     foot.appendChild(b1);
     foot.appendChild(b2);
     body.appendChild(foot);
+  }
+
+  // 把历史记录还原成可编辑的报价数据（与刚生成时同一套卡片：点配件名/单价/数量修改、可插入删除）
+  function quoteFromHistory(h) {
+    const items = [];
+    const manual = {};
+    (h.items || []).forEach((i) => {
+      const price = i.price != null ? i.price : 0;
+      const qty = Math.max(1, parseInt(i.qty, 10) || 1);
+      if (i.manual) manual[i.name] = { qty, price };
+      else items.push({ name: i.name, short: i.short || i.name, category: i.category || 'other', qty, price, note: i.note || '', subtotal: price * qty });
+    });
+    return {
+      machine: h.machine,
+      machineFamily: h.machineName || h.machine,
+      machineVariant: h.machineVariant || null,
+      requirement: { summary: h.text || '' },
+      items,
+      missing: h.missing || [],
+      notes: [],
+      checks: [],
+      total: 0, simple: '', detail: '',
+    };
+  }
+
+  // 历史报价编辑：弹窗里挂一张与刚生成时完全一样的可编辑报价卡（另存为新历史）
+  function openHistoryEditable(h) {
+    openModal('编辑历史报价' + (h.clientName ? '（给「' + h.clientName + '」）' : ''));
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint',
+      '这是这份历史报价的可编辑副本：点配件名 / 单价 / 数量即可修改，可插入、删除配件。改完点卡片下方的「保存到历史」会另存为一条新记录，原记录保留。'));
+    body.appendChild(buildQuoteCard(quoteFromHistory(h)));
   }
 
   async function openAdminModal() {
@@ -1976,7 +2012,11 @@
   $('#login-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   $('#login-user').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   $('#send').onclick = send;
-  $('#new-chat').onclick = () => { showPage('chat'); newChat(); };
+  $('#new-chat').onclick = () => {
+    // 在其他页面时第一次点击 = 回到上次报价的界面；已经在报价页再点一次才真正新建
+    if ($('#chat-page').classList.contains('hidden')) { showPage('chat'); return; }
+    newChat();
+  };
   $('#btn-prices').onclick = () => showPage('price');
   $('#btn-logout').onclick = () => doLogout(false);
   $('#btn-admin').onclick = openAdminModal;
