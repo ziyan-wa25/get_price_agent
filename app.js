@@ -1115,10 +1115,11 @@
     }
 
     const items = stockFiltered();
-    // 成本价、售价仅 admin 可见（服务端不下发）；库存上传员/导出员只有 货品名称/库存量/备注 三列
-    const heads = stockData.canSeePrice
-      ? ['货品名称', '库存量', '成本价', '售价', '备注']
-      : ['货品名称', '库存量', '备注'];
+    // 成本价仅 admin 可见；售价 admin 和普通用户可见；库存上传员/导出员两者都不可见（服务端不下发字段）
+    const heads = ['货品名称', '库存量'];
+    if (stockData.canSeeCost) heads.push('成本价');
+    if (stockData.canSeePrice) heads.push('售价');
+    heads.push('备注');
     if (stockBatchMode === 'delete') heads.unshift(''); // 勾选列
     const trh = el('tr');
     heads.forEach((h) => {
@@ -1174,7 +1175,7 @@
     }
     tr.appendChild(el('td', 'col-name-t', it.name || ''));
     tr.appendChild(el('td', 'num', fmtQty(it.qty)));
-    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtCost(it.cost)));
+    if (stockData.canSeeCost) tr.appendChild(el('td', 'num', fmtCost(it.cost)));
     if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(it.price)));
     tr.appendChild(el('td', 'stock-note', it.note || ''));
     return tr;
@@ -1197,10 +1198,12 @@
     const tdQty = el('td', 'num');
     tdQty.appendChild(stockCellInput(e.qty, (ev) => { e.qty = ev.target.value; }));
     tr.appendChild(tdQty);
-    if (stockData.canSeePrice) {
+    if (stockData.canSeeCost) {
       const tdCost = el('td', 'num');
       tdCost.appendChild(stockCellInput(e.cost, (ev) => { e.cost = ev.target.value; }));
       tr.appendChild(tdCost);
+    }
+    if (stockData.canSeePrice) {
       const tdPrice = el('td', 'num');
       tdPrice.appendChild(stockCellInput(e.price, (ev) => { e.price = ev.target.value; }));
       tr.appendChild(tdPrice);
