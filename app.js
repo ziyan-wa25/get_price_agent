@@ -3,10 +3,20 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-6（批量修改输入框修复）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-9（模拟登录/批量改删一体/客户检索/行编辑/登录统计）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
+  // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
+  (function () {
+    const m = location.search.match(/[?&]imp=([^&]+)/);
+    if (m) {
+      try { sessionStorage.setItem('qa_imp_token', decodeURIComponent(m[1])); } catch (e) {}
+      try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    }
+  })();
+
   let token = localStorage.getItem('qa_token') || '';
+  let impToken = sessionStorage.getItem('qa_imp_token') || '';
   let me = null;              // {username, role}
   let chatContext = [];       // 发给后端的对话上下文 [{role, content}]
   let history = [];
@@ -38,7 +48,8 @@
 
   async function api(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const t = impToken || token; // 模拟登录标签页用被模拟者的身份
+    if (t) headers['Authorization'] = 'Bearer ' + t;
     let res;
     try {
       res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }); // 禁用 HTTP 缓存：换账号后绝不允许命中上一任用户的响应
@@ -90,6 +101,8 @@
       const r = await api('POST', '/api/login', { username: u, password: p });
       token = r.token;
       localStorage.setItem('qa_token', token);
+      sessionStorage.removeItem('qa_imp_token'); // 正式登录会覆盖模拟登录态
+      impToken = '';
       me = { username: r.username, role: r.role };
       enterApp();
     } catch (e) {
@@ -104,6 +117,8 @@
     me = null;
     chatContext = [];
     localStorage.removeItem('qa_token');
+    sessionStorage.removeItem('qa_imp_token');
+    impToken = '';
     $('#app-view').classList.add('hidden');
     $('#login-view').classList.remove('hidden');
     $('#login-pass').value = '';
@@ -122,6 +137,21 @@
     } else {
       $('#btn-admin').classList.add('hidden');
     }
+    // 模拟登录横幅：明确告知当前是"以他人身份查看"
+    const oldBanner = document.getElementById('imp-banner');
+    if (oldBanner) oldBanner.remove();
+    if (impToken) {
+      const banner = el('div', 'imp-banner', '👁 模拟登录中：正在以「' + me.username + (me.impersonatedBy ? '」（由 ' + me.impersonatedBy + ' 发起）' : '') + '」的身份查看，数据与权限与该账号完全一致。 ');
+      const bExit = el('button', '', '退出模拟');
+      bExit.onclick = () => {
+        sessionStorage.removeItem('qa_imp_token');
+        impToken = '';
+        location.reload();
+      };
+      banner.appendChild(bExit);
+      const appView = $('#app-view');
+      appView.insertBefore(banner, appView.firstChild);
+    }
     resetUserData(); // 清掉上一任用户留在内存里的页面数据（价格/库存/应收/历史），防止越权残留
     newChat();
     loadHistory();
@@ -137,6 +167,7 @@
     recvData = null;
     recvFilter = '';
     recvSel = new Set();
+    recvClientFilter = '';
     priceData = null;
     priceTotal = [];
     priceMachineId = null;
@@ -1056,36 +1087,26 @@
 
     const bar = el('div', 'stock-toolbar');
     if (stockData.canEdit && stockBatchMode === 'edit') {
-      bar.appendChild(el('span', 'stock-hint', '直接在表格里修改格子（可改多行多格），改完点「保存全部修改」一次性提交'));
-      const n = stockChangedRows().length;
-      const bSave = el('button', 'primary', '💾 保存全部修改（' + n + '）');
+      bar.classList.add('sticky'); // 悬浮：向下滚动时保存按钮仍可点击
+      bar.appendChild(el('span', 'stock-hint', '直接修改格子；勾选行=标记删除（红色显示），点「保存全部修改」一次提交'));
+      const nChg = stockChangedRows().length;
+      const nDel = stockDelSel.size;
+      const bSave = el('button', 'primary', '💾 保存全部修改' + (nDel ? '（改 ' + nChg + ' / 删 ' + nDel + '）' : '（' + nChg + '）'));
       bSave.id = 'stock-save-btn';
       bSave.onclick = saveStockBatchEdit;
       const bCancel = el('button', '', '取消');
       bCancel.onclick = exitStockBatch;
       bar.appendChild(bSave);
       bar.appendChild(bCancel);
-    } else if (stockData.canEdit && stockBatchMode === 'delete') {
-      bar.appendChild(el('span', 'stock-hint', '勾选要删除的行（支持全选），点「删除所选」一次删除'));
-      const bDel = el('button', 'danger', '🗑 删除所选（' + stockDelSel.size + '）');
-      bDel.id = 'stock-del-btn';
-      bDel.onclick = deleteStockBatch;
-      const bCancel = el('button', '', '取消');
-      bCancel.onclick = exitStockBatch;
-      bar.appendChild(bDel);
-      bar.appendChild(bCancel);
     } else {
       if (stockData.canEdit) {
         const bAdd = el('button', '', '＋ 新增配件');
         bAdd.onclick = openStockItemModal;
         bar.appendChild(bAdd);
-        const bEdit = el('button', '', '✏️ 批量修改');
+        const bEdit = el('button', 'primary', '✏️ 批量修改');
         bEdit.onclick = enterStockBatchEdit;
         bar.appendChild(bEdit);
-        const bDelMode = el('button', 'danger', '🗑 批量删除');
-        bDelMode.onclick = enterStockBatchDelete;
-        bar.appendChild(bDelMode);
-        bar.appendChild(el('span', 'stock-hint', '「批量修改」：直接在表格里改多个格子后一次保存'));
+        bar.appendChild(el('span', 'stock-hint', '「批量修改」：改格子 + 勾选标记删除，一次保存'));
       }
       if (stockData.canImport) {
         const bImport = el('button', '', '⇪ 导入 Excel');
@@ -1120,20 +1141,20 @@
     if (stockData.canSeeCost) heads.push('成本价');
     if (stockData.canSeePrice) heads.push('售价');
     heads.push('备注');
-    if (stockBatchMode === 'delete') heads.unshift(''); // 勾选列
+    if (stockBatchMode === 'edit') heads.unshift('删?'); // 勾选列（标记删除）
     const trh = el('tr');
     heads.forEach((h) => {
       let cls = '';
       if (h === '货品名称') cls = 'col-name';
       else if (h === '库存量' || h === '成本价' || h === '售价') cls = 'col-num';
-      trh.appendChild(el('th', cls, h === '' ? '' : h));
+      trh.appendChild(el('th', cls, h === '删?' ? '删' : h));
     });
-    if (stockBatchMode === 'delete') {
-      const allSel = items.length > 0 && items.every((it) => stockDelSel.has(it.name));
+    if (stockBatchMode === 'edit') {
+      const allDel = items.length > 0 && items.every((it) => stockDelSel.has(it.name));
       const cbAll = el('input');
       cbAll.type = 'checkbox';
-      cbAll.checked = allSel;
-      cbAll.title = '全选/全不选';
+      cbAll.checked = allDel;
+      cbAll.title = '全选/全不选（标记删除）';
       cbAll.onchange = () => {
         items.forEach((it) => { if (cbAll.checked) stockDelSel.add(it.name); else stockDelSel.delete(it.name); });
         renderStockPage();
@@ -1145,7 +1166,11 @@
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
-    items.forEach((it) => tbody.appendChild(stockBatchMode === 'edit' ? stockEditRow(it) : stockPlainRow(it, stockBatchMode === 'delete')));
+    items.forEach((it) => {
+      const marked = stockDelSel.has(it.name);
+      if (stockBatchMode === 'edit') tbody.appendChild(marked ? stockPlainRow(it, true, true) : stockEditRow(it));
+      else tbody.appendChild(stockPlainRow(it, false, false));
+    });
     if (!items.length) {
       const tr = el('tr');
       const td = el('td', 'modal-hint', ($('#stock-search').value || '').trim() ? '没有匹配的货品' : '库存表还是空的');
@@ -1157,18 +1182,18 @@
     box.appendChild(tbl);
   }
 
-  function stockPlainRow(it, withCheckbox) {
-    const tr = el('tr');
+  function stockPlainRow(it, withCheckbox, marked) {
+    const tr = el('tr', marked ? 'stock-row-del' : '');
     if (withCheckbox) {
       const tdSel = el('td', 'num');
       const cb = el('input');
       cb.type = 'checkbox';
-      cb.checked = stockDelSel.has(it.name);
+      cb.checked = !!marked;
+      cb.title = '取消标记则恢复为可编辑行';
       cb.onchange = () => {
         if (cb.checked) stockDelSel.add(it.name);
         else stockDelSel.delete(it.name);
-        const btn = document.getElementById('stock-del-btn');
-        if (btn) btn.textContent = '🗑 删除所选（' + stockDelSel.size + '）';
+        renderStockPage();
       };
       tdSel.appendChild(cb);
       tr.appendChild(tdSel);
@@ -1191,6 +1216,18 @@
   function stockEditRow(orig) {
     const e = stockEdits[orig.name];
     const tr = el('tr');
+    // 首列：删除标记勾选框（勾选后该行转为红色只读行）
+    const tdSel = el('td', 'num');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.title = '勾选=标记此行删除';
+    cb.onchange = () => {
+      if (cb.checked) stockDelSel.add(orig.name);
+      else stockDelSel.delete(orig.name);
+      renderStockPage();
+    };
+    tdSel.appendChild(cb);
+    tr.appendChild(tdSel);
     // 注意：el() 第三参数会变成 textContent，元素必须用 appendChild 挂进去
     const tdName = el('td', 'col-name-t');
     tdName.appendChild(stockCellInput(e.name, (ev) => { e.name = ev.target.value; }, true));
@@ -1227,6 +1264,7 @@
   function stockChangedRows() {
     const out = [];
     (stockData.items || []).forEach((it) => {
+      if (stockDelSel.has(it.name)) return; // 标记删除的行不再参与修改
       const e = stockEdits[it.name];
       if (!e) return;
       const orig = stockOrigRaw(it);
@@ -1241,13 +1279,8 @@
   function enterStockBatchEdit() {
     stockBatchMode = 'edit';
     stockEdits = {};
-    (stockData.items || []).forEach((it) => { stockEdits[it.name] = { ...stockOrigRaw(it) }; });
-    renderStockPage();
-  }
-
-  function enterStockBatchDelete() {
-    stockBatchMode = 'delete';
     stockDelSel = new Set();
+    (stockData.items || []).forEach((it) => { stockEdits[it.name] = { ...stockOrigRaw(it) }; });
     renderStockPage();
   }
 
@@ -1260,26 +1293,16 @@
 
   async function saveStockBatchEdit() {
     const changes = stockChangedRows();
-    if (!changes.length) { alert('还没有改动：请先在表格里修改要调整的格子'); return; }
-    if (!confirm('保存 ' + changes.length + ' 行修改？')) return;
+    const deletes = Array.from(stockDelSel);
+    if (!changes.length && !deletes.length) { alert('还没有改动：请先在表格里修改格子，或勾选要删除的行'); return; }
+    const msg = (changes.length ? '修改 ' + changes.length + ' 行' : '') + (changes.length && deletes.length ? '、' : '') + (deletes.length ? '删除 ' + deletes.length + ' 行' : '');
+    if (!confirm('保存' + msg + '？')) return;
     try {
-      const r = await api('POST', '/api/stock-item', { action: 'batch-save', changes });
-      alert('已保存 ' + r.applied + ' 行修改');
+      const r = await api('POST', '/api/stock-item', { action: 'batch-save', changes, deletes });
+      alert('已保存：修改 ' + r.applied + ' 行' + (r.deleted ? '，删除 ' + r.deleted + ' 行' : ''));
       exitStockBatch();
       loadStock();
     } catch (e) { alert('保存失败：' + e.message); }
-  }
-
-  async function deleteStockBatch() {
-    const names = Array.from(stockDelSel);
-    if (!names.length) { alert('请先勾选要删除的行'); return; }
-    if (!confirm('确定删除所选 ' + names.length + ' 行？（删除后再次导入会重新出现）')) return;
-    try {
-      const r = await api('POST', '/api/stock-item', { action: 'batch-delete', names });
-      alert('已删除 ' + r.deleted + ' 行');
-      exitStockBatch();
-      loadStock();
-    } catch (e) { alert('批量删除失败：' + e.message); }
   }
 
   async function confirmStockEdit() {
@@ -1357,6 +1380,7 @@
   let recvData = null;   // GET /api/receivables 结果 {rows(含id), handlers, lastImportAt, lastImportBy, canImport, canViewAll}
   let recvFilter = '';   // 经手人筛选（''=全部；仅 admin/库存上传员）
   let recvSel = new Set(); // 勾选的行 id（选择性导出；空=导出当前范围全部）
+  let recvClientFilter = ''; // 往来客户检索关键字（过滤显示与导出）
 
   async function loadRecv() {
     const box = $('#recv-content');
@@ -1379,9 +1403,11 @@
   }
 
   function recvVisible() {
-    const rows = (recvData && recvData.rows) || [];
-    if (!recvData.canViewAll || !recvFilter) return rows;
-    return rows.filter((r) => r.handler === recvFilter); // admin 按经手人筛选
+    let rows = (recvData && recvData.rows) || [];
+    if (recvData.canViewAll && recvFilter) rows = rows.filter((r) => r.handler === recvFilter); // admin 按经手人筛选
+    const kw = recvClientFilter.trim().toLowerCase();
+    if (kw) rows = rows.filter((r) => String(r.client || '').toLowerCase().indexOf(kw) !== -1); // 往来客户检索
+    return rows;
   }
 
   function renderRecvPage() {
@@ -1422,8 +1448,17 @@
     const bExport = el('button', 'primary', '⇩ 导出 Excel' + (recvSel.size ? '（已选 ' + recvSel.size + '）' : ''));
     bExport.onclick = exportRecvExcel;
     bar.appendChild(bExport);
-    bar.appendChild(el('span', 'stock-hint', recvData.canViewAll
-      ? '你看到的是全部经手人的明细' + (recvFilter ? '（经手人：' + recvFilter + '）' : '') + '；勾选行后只导出勾选的行，不勾选=导出当前范围'
+    // 往来客户检索：过滤表格显示与导出范围（配合全选，快速导出某客户的明细）
+    const searchWrap = el('span', 'recv-filter');
+    searchWrap.appendChild(el('span', 'stock-hint', '🔎 往来客户检索'));
+    const inClient = el('input', 'recv-client-input');
+    inClient.placeholder = '输入客户名关键字…';
+    inClient.value = recvClientFilter;
+    inClient.oninput = () => { recvClientFilter = inClient.value; renderRecvPage(); };
+    searchWrap.appendChild(inClient);
+    bar.appendChild(searchWrap);
+    bar.appendChild(el('span', 'stock-hint', recvData.isAdmin
+      ? '你看到全部明细' + (recvFilter ? '（经手人：' + recvFilter + '）' : '') + (recvClientFilter ? '（客户含「' + recvClientFilter + '」）' : '') + '；勾选=只导勾选；点击行可修改该条内容（重新导入会被覆盖）'
       : '你只看到自己经手的明细；勾选行后只导出勾选的行，不勾选=全部导出'));
     box.appendChild(bar);
 
@@ -1467,6 +1502,11 @@
     const tbody = el('tbody');
     rows.forEach((r) => {
       const tr = el('tr');
+      if (recvData.isAdmin) {
+        tr.classList.add('row-editable'); // 仅 admin：点击行编辑该条
+        tr.title = '点击修改该条内容（重新导入后会被覆盖）';
+        tr.onclick = () => openRecvEditModal(r);
+      }
       const tdSel = el('td', 'num');
       const cb = el('input');
       cb.type = 'checkbox';
@@ -1528,6 +1568,8 @@
     try {
       const r = await api('POST', '/api/receivables-import', { dataBase64: b64 });
       alert('导入完成：共 ' + r.total + ' 行（没有经手人的行已跳过，原有数据已被替换）');
+      recvClientFilter = '';
+      recvFilter = '';
       loadRecv();
     } catch (err) { alert('导入失败：' + err.message); }
   }
@@ -1535,8 +1577,10 @@
   async function exportRecvExcel() {
     try {
       const payload = { handler: recvData && recvData.canViewAll ? recvFilter : '' };
+      if (recvClientFilter.trim()) payload.client = recvClientFilter.trim(); // 往来客户检索跟随导出
       if (recvSel.size) payload.ids = Array.from(recvSel); // 勾选了行 → 只导出勾选的
       const r = await api('POST', '/api/receivables-export', payload);
+      recvSel = new Set(); // 导出后清空勾选
       const bin = atob(r.dataBase64);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -1548,6 +1592,52 @@
       a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     } catch (e) { alert('导出失败：' + e.message); }
+  }
+
+  // admin 修改单条应收明细（重新导入会被新文件覆盖）
+  function openRecvEditModal(row) {
+    openModal('修改应收明细（重新导入后会被覆盖）');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '本次修改立即生效，但下次导入 Excel 会被新文件整体覆盖。'));
+    const fields = [
+      ['date', '日期（如 2025-04-21）'],
+      ['client', '往来客户'],
+      ['item', '货品名称'],
+      ['qty', '交易数量'],
+      ['price', '交易单价'],
+      ['amount', '应收增加（可负）'],
+      ['note', '附加说明'],
+      ['handler', '经手人（须与账号名完全一致该用户才可见）'],
+    ];
+    const inputs = {};
+    fields.forEach(([k, ph]) => {
+      const i = el('input');
+      i.placeholder = ph;
+      i.value = row[k] == null ? '' : String(row[k]);
+      inputs[k] = i;
+      body.appendChild(i);
+    });
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', '保存修改');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    bOk.onclick = async () => {
+      try {
+        await api('POST', '/api/receivables-update', {
+          id: row.id,
+          patch: {
+            date: inputs.date.value, client: inputs.client.value, item: inputs.item.value,
+            qty: inputs.qty.value, price: inputs.price.value, amount: inputs.amount.value,
+            note: inputs.note.value, handler: inputs.handler.value,
+          },
+        });
+        closeModal();
+        loadRecv();
+      } catch (e) { alert('保存失败：' + e.message); }
+    };
+    foot.appendChild(bOk);
+    foot.appendChild(bCancel);
+    body.appendChild(foot);
   }
 
   async function loadHistory() {
@@ -2518,7 +2608,7 @@
     const btnAdd = el('button', '', '添加账号');
     form.appendChild(inUser); form.appendChild(inPass); form.appendChild(btnAdd);
     body.appendChild(form);
-    const hint = el('div', 'modal-hint', '岗位说明：管理员=全部权限（含库存编辑/成本价）；普通用户=报价与查看库存（无成本价）；库存上传员=可导入库存；库存导出员=可导出库存。删除账号后，该账号立即失去所有权限，其历史报价一并删除。管理员账号不可删除、不可改岗位。');
+    const hint = el('div', 'modal-hint', '岗位说明：管理员=全部权限（含库存编辑/成本价）；普通用户=报价与查看库存（可见售价）；库存上传员=可导入库存与应收明细；库存导出员=可导出库存。删除规则：admin 可以删除任何人（历史报价一并删除），唯独不能删除自己。');
     body.appendChild(hint);
 
     const listBox = el('div');
@@ -2531,6 +2621,14 @@
         (r.users || []).forEach((u) => {
           const row = el('div', 'user-row');
           row.appendChild(el('span', 'u-name', u.username));
+          row.appendChild(el('span', 'u-login', '登录 ' + (u.loginCount || 0) + ' 次 · ' + (u.lastLoginAt ? '最近 ' + new Date(u.lastLoginAt).toLocaleString('zh-CN') : '从未登录')));
+          const isSelf = u.username === me.username;
+          const isExtraAdmin = u.role === 'admin' && !isSelf; // 历史遗留的多余管理员：可改岗、可删除
+          if (isExtraAdmin) {
+            const warn = el('span', 'u-warn', '⚠️ 多余管理员');
+            warn.title = '系统仅保留一个管理员。可将该账号改为正确岗位，或直接删除。';
+            row.appendChild(warn);
+          }
           const roleSel = el('select', 'u-role');
           Object.keys(ROLE_LABELS).forEach((rk) => {
             if (rk === 'admin') return; // 系统仅一个管理员，不提供管理员选项
@@ -2538,16 +2636,22 @@
             opt.value = rk;
             roleSel.appendChild(opt);
           });
-          roleSel.value = u.role;
-          if (u.username === me.username) {
+          if (isExtraAdmin) {
+            const ph = el('option', '', '是管理员，请改选 ↓');
+            ph.value = '';
+            ph.disabled = true;
+            ph.selected = true;
+            roleSel.insertBefore(ph, roleSel.firstChild);
+          } else {
+            roleSel.value = u.role;
+          }
+          if (isSelf) {
             roleSel.disabled = true;
             roleSel.title = '不能修改自己的岗位';
-          } else if (u.role === 'admin') {
-            roleSel.disabled = true;
-            roleSel.title = '管理员账号不能改岗位';
           } else {
             roleSel.onchange = async () => {
-              if (!confirm('把「' + u.username + '」的岗位改为「' + ROLE_LABELS[roleSel.value] + '」？')) { roleSel.value = u.role; return; }
+              if (!roleSel.value) { roleSel.value = ''; return; }
+              if (!confirm('把「' + u.username + '」的岗位改为「' + ROLE_LABELS[roleSel.value] + '」？')) { roleSel.value = u.role; refresh(); return; }
               try {
                 await api('POST', '/api/users-role', { username: u.username, role: roleSel.value });
                 refresh();
@@ -2555,8 +2659,20 @@
             };
           }
           row.appendChild(roleSel);
+          if (!isSelf) {
+            const imp = el('button', 'u-del u-imp', '👁 模拟登录');
+            imp.title = '在新标签页以该账号的身份查看系统（对方无需退出，也不影响其密码与数据）';
+            imp.onclick = async () => {
+              if (!confirm('以「' + u.username + '」的身份打开一个新的查看页面？')) return;
+              try {
+                const r2 = await api('POST', '/api/users-impersonate', { username: u.username });
+                window.open(location.pathname + '?imp=' + encodeURIComponent(r2.token), '_blank');
+              } catch (e) { alert(e.message); }
+            };
+            row.appendChild(imp);
+          }
           const del = el('button', 'u-del', '删除');
-          if (u.role === 'admin') { del.disabled = true; del.textContent = '不可删除'; }
+          if (isSelf) { del.disabled = true; del.textContent = '不能删除自己'; }
           del.onclick = async () => {
             if (!confirm('确定删除账号「' + u.username + '」？该账号将立即失去所有权限。')) return;
             try {
@@ -2565,6 +2681,16 @@
             } catch (e) { alert(e.message); }
           };
           row.appendChild(del);
+          const rst = el('button', 'u-del u-reset', '清零登录');
+          rst.title = '把该账号的登录次数与最近登录时间清零，重新计数';
+          rst.onclick = async () => {
+            if (!confirm('清零「' + u.username + '」的登录统计？')) return;
+            try {
+              await api('POST', '/api/users-login-reset', { username: u.username });
+              refresh();
+            } catch (e) { alert(e.message); }
+          };
+          row.appendChild(rst);
           listBox.appendChild(row);
         });
       } catch (e) {
@@ -2653,11 +2779,21 @@
     $('#login-view').classList.remove('hidden');
   }
 
-  if (token) {
-    // 已有 token：尝试恢复会话
+  if (token || impToken) {
+    // 已有 token（或模拟登录）：尝试恢复会话
     api('GET', '/api/me')
-      .then((r) => { me = { username: r.username, role: r.role }; enterApp(); })
-      .catch(() => { token = ''; localStorage.removeItem('qa_token'); showLogin(); });
+      .then((r) => { me = { username: r.username, role: r.role, impersonatedBy: r.impersonatedBy || '' }; enterApp(); })
+      .catch(() => {
+        if (impToken) { // 模拟 token 失效：只退模拟，不动 admin 自己的登录
+          sessionStorage.removeItem('qa_imp_token');
+          impToken = '';
+        } else {
+          token = '';
+          localStorage.removeItem('qa_token');
+        }
+        if (token) location.reload();
+        else showLogin();
+      });
   } else {
     showLogin();
   }
