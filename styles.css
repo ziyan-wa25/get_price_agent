@@ -220,9 +220,10 @@ input, textarea { font-family: inherit; outline: none; }
 .user-row .u-name { flex: 1; }
 .user-row .u-role { color: #888; font-size: 12px; margin-right: 12px; }
 .user-row .u-del {
-  padding: 4px 12px; font-size: 12px;
+  padding: 4px 12px; font-size: 12px; margin-left: 8px; flex: none;
   border: 1px solid #f0c1c1; border-radius: 6px; background: #fff5f5; color: #d93025;
 }
+.user-row .u-del:hover { background: #ffe9e7; }
 .user-row .u-del:disabled { opacity: .4; }
 .modal-hint { color: #888; font-size: 12px; margin-top: 8px; }
 
@@ -422,6 +423,9 @@ tr.stock-row-del td.col-name-t { color: #b0b3b8; text-decoration: line-through; 
 .recv-table tbody tr.row-editable:hover td { background: #f5f7ff; }
 /* 备注列：自动换行，占满剩余宽度 */
 .stock-note { white-space: pre-wrap; word-break: break-word; }
+/* 「备注」与「备注（库房）」两列宽度相近，备注略长（剩余空间按 54:46 分配） */
+.stock-table .stock-note { width: 54%; }
+.stock-table .stock-wh { width: 46%; }
 /* 账号管理里的岗位下拉 */
 .user-row select.u-role {
   border: 1px solid #d9dce1; border-radius: 6px; font-size: 12.5px;
@@ -430,8 +434,6 @@ tr.stock-row-del td.col-name-t { color: #b0b3b8; text-decoration: line-through; 
 .user-row select.u-role:disabled { color: #999; background: #f7f8fa; border-color: #eef0f2; }
 /* 登录统计与清零 */
 .user-row .u-login { color: #999; font-size: 12px; margin-right: 10px; }
-.user-row .u-reset { font-size: 12px; padding: 3px 8px; }
-.user-row .u-imp { font-size: 12px; padding: 3px 8px; margin-right: 6px; }
 /* 多余管理员警示标 */
 .user-row .u-warn {
   color: #b45309; background: #fef3c7; border: 1px solid #fcd34d;

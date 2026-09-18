@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-10（导出三列含库房/重设密码/强制改密/批量改删一体/客户检索/行编辑）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-13（中文检索/重设密码弹窗/导出三列含库房/强制改密/批量改删一体）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1235,7 +1235,7 @@
     if (stockData.canSeeCost) tr.appendChild(el('td', 'num', fmtCost(it.cost)));
     if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(it.price)));
     tr.appendChild(el('td', 'stock-note', it.note || ''));
-    tr.appendChild(el('td', 'stock-note', it.wh || '')); // 备注（库房）：所有人可见
+    tr.appendChild(el('td', 'stock-note stock-wh', it.wh || '')); // 备注（库房）：所有人可见
     return tr;
   }
 
@@ -1281,7 +1281,7 @@
     const noteTd = el('td', 'stock-note');
     noteTd.appendChild(stockCellInput(e.note, (ev) => { e.note = ev.target.value; }, true));
     tr.appendChild(noteTd);
-    const tdWh = el('td', 'stock-note');
+    const tdWh = el('td', 'stock-note stock-wh');
     tdWh.appendChild(stockCellInput(e.wh, (ev) => { e.wh = ev.target.value; }));
     tr.appendChild(tdWh);
     return tr;
@@ -1368,7 +1368,7 @@
     if (stockData.canSeeCost) tr.appendChild(el('td', 'num', fmtCost(orig.cost)));
     if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(orig.price)));
     tr.appendChild(el('td', 'stock-note', orig.note || ''));
-    const td = el('td', 'stock-note');
+    const td = el('td', 'stock-note stock-wh');
     td.appendChild(stockCellInput(stockWhEdits[orig.name] || '', (ev) => { stockWhEdits[orig.name] = ev.target.value; }));
     tr.appendChild(td);
     return tr;
@@ -1543,7 +1543,21 @@
     const inClient = el('input', 'recv-client-input');
     inClient.placeholder = '输入客户名关键字…';
     inClient.value = recvClientFilter;
-    inClient.oninput = () => { recvClientFilter = inClient.value; renderRecvPage(); };
+    // 中文输入法组字保护：组字（拼音候选）期间不重渲染，避免输入框被重建打断组字；选字完成（compositionend）再统一刷新
+    let composing = false;
+    inClient.addEventListener('compositionstart', () => { composing = true; });
+    inClient.addEventListener('compositionend', () => {
+      composing = false;
+      recvClientFilter = inClient.value;
+      renderRecvPage();
+    });
+    inClient.oninput = () => {
+      if (composing) return;
+      const v = inClient.value;
+      if (v === recvClientFilter) return; // 组字结束后的补发 input：值没变就不必重渲染
+      recvClientFilter = v;
+      renderRecvPage();
+    };
     searchWrap.appendChild(inClient);
     bar.appendChild(searchWrap);
     bar.appendChild(el('span', 'stock-hint', recvData.isAdmin
@@ -2753,21 +2767,22 @@
             };
           }
           row.appendChild(roleSel);
-          const rstPass = el('button', 'u-reset', '🔑 重设密码');
+          const rstPass = el('button', 'u-del', '🔑 重设密码');
           rstPass.title = '为该用户设置新密码（用于忘记密码时）：对方当前密码立即失效，下次登录用新密码，登录后会被要求再次修改';
-          rstPass.onclick = async () => {
-            const np = prompt('为「' + u.username + '」设置新密码（至少 6 位）：');
-            if (np === null) return;
-            if (String(np).trim().length < 6) { alert('新密码至少 6 位'); return; }
-            if (!confirm('确认重设「' + u.username + '」的密码？对方当前密码会立即失效。')) return;
+          rstPass.onclick = () => openResetPassModal(u.username);
+          row.appendChild(rstPass);
+          const rst = el('button', 'u-del', '清零登录');
+          rst.title = '把该账号的登录次数与最近登录时间清零，重新计数';
+          rst.onclick = async () => {
+            if (!confirm('清零「' + u.username + '」的登录统计？')) return;
             try {
-              await api('POST', '/api/users-reset-pass', { username: u.username, newPassword: String(np).trim() });
-              alert('已重设「' + u.username + '」的密码。请把新密码告知对方：下次登录用新密码，登录后系统会要求其再次修改。');
+              await api('POST', '/api/users-login-reset', { username: u.username });
+              refresh();
             } catch (e) { alert(e.message); }
           };
-          row.appendChild(rstPass);
+          row.appendChild(rst);
           if (!isSelf) {
-            const imp = el('button', 'u-del u-imp', '👁 模拟登录');
+            const imp = el('button', 'u-del', '👁 模拟登录');
             imp.title = '在新标签页以该账号的身份查看系统（对方无需退出，也不影响其密码与数据）';
             imp.onclick = async () => {
               if (!confirm('以「' + u.username + '」的身份打开一个新的查看页面？')) return;
@@ -2788,16 +2803,6 @@
             } catch (e) { alert(e.message); }
           };
           row.appendChild(del);
-          const rst = el('button', 'u-del u-reset', '清零登录');
-          rst.title = '把该账号的登录次数与最近登录时间清零，重新计数';
-          rst.onclick = async () => {
-            if (!confirm('清零「' + u.username + '」的登录统计？')) return;
-            try {
-              await api('POST', '/api/users-login-reset', { username: u.username });
-              refresh();
-            } catch (e) { alert(e.message); }
-          };
-          row.appendChild(rst);
           listBox.appendChild(row);
         });
       } catch (e) {
@@ -2819,6 +2824,35 @@
     };
 
     refresh();
+  }
+
+  // admin 重设用户密码弹窗（与「修改密码」弹窗同款样式）
+  function openResetPassModal(username) {
+    openModal('重设密码 — ' + username);
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '为「' + username + '」设置新密码：对方当前密码立即失效；下次登录用新密码，登录后系统会要求其再次修改。'));
+    const inNew = el('input'); inNew.type = 'password'; inNew.placeholder = '新密码（至少 6 位）';
+    const inNew2 = el('input'); inNew2.type = 'password'; inNew2.placeholder = '确认新密码';
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', '确认重设');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    [inNew, inNew2].forEach((x) => body.appendChild(x));
+    foot.appendChild(bOk);
+    foot.appendChild(bCancel);
+    body.appendChild(foot);
+    bOk.onclick = async () => {
+      const np = inNew.value;
+      if (np.length < 6) { alert('新密码至少 6 位'); return; }
+      if (np !== inNew2.value) { alert('两次输入的新密码不一致'); return; }
+      bOk.disabled = true;
+      try {
+        await api('POST', '/api/users-reset-pass', { username, newPassword: np });
+        alert('已重设「' + username + '」的密码。请把新密码告知对方：下次登录用新密码，登录后系统会要求其再次修改。');
+        closeModal();
+      } catch (e) { alert(e.message); }
+      finally { bOk.disabled = false; }
+    };
   }
 
   function openChangePassModal() {
