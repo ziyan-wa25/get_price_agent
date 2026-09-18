@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-9（模拟登录/批量改删一体/客户检索/行编辑/登录统计）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-10（导出三列含库房/重设密码/强制改密/批量改删一体/客户检索/行编辑）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -103,13 +103,44 @@
       localStorage.setItem('qa_token', token);
       sessionStorage.removeItem('qa_imp_token'); // 正式登录会覆盖模拟登录态
       impToken = '';
-      me = { username: r.username, role: r.role };
+      me = { username: r.username, role: r.role, mustChange: !!r.mustChange };
+      if (r.mustChange) { forceChangePassword(p); return; } // 仍用初始密码：必须先改密才能进入系统
+      enterApp();
       enterApp();
     } catch (e) {
       $('#login-err').textContent = e.message;
     } finally {
       btn.disabled = false;
     }
+  }
+
+  // 强制修改初始密码：改成功前不进入系统
+  function forceChangePassword(prefillOld) {
+    openModal('安全要求：请先修改初始密码');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '检测到该账号仍在使用初始密码。为安全起见，必须修改密码后才能使用系统。'));
+    const iOld = el('input'); iOld.type = 'password'; iOld.placeholder = '当前密码（初始密码）'; iOld.value = prefillOld || '';
+    const iNew = el('input'); iNew.type = 'password'; iNew.placeholder = '新密码（至少 6 位，不能与当前密码相同）';
+    const iNew2 = el('input'); iNew2.type = 'password'; iNew2.placeholder = '确认新密码';
+    body.appendChild(iOld); body.appendChild(iNew); body.appendChild(iNew2);
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', '修改密码并进入系统');
+    bOk.onclick = async () => {
+      const np = iNew.value;
+      if (np.length < 6) { alert('新密码至少 6 位'); return; }
+      if (np !== iNew2.value) { alert('两次输入的新密码不一致'); return; }
+      if (np === iOld.value) { alert('新密码不能与当前密码相同'); return; }
+      bOk.disabled = true;
+      try {
+        await api('POST', '/api/change-password', { oldPassword: iOld.value, newPassword: np });
+        me.mustChange = false;
+        closeModal();
+        enterApp();
+      } catch (e) { alert(e.message); }
+      finally { bOk.disabled = false; }
+    };
+    foot.appendChild(bOk);
+    body.appendChild(foot);
   }
 
   function doLogout(expired) {
@@ -137,21 +168,7 @@
     } else {
       $('#btn-admin').classList.add('hidden');
     }
-    // 模拟登录横幅：明确告知当前是"以他人身份查看"
-    const oldBanner = document.getElementById('imp-banner');
-    if (oldBanner) oldBanner.remove();
-    if (impToken) {
-      const banner = el('div', 'imp-banner', '👁 模拟登录中：正在以「' + me.username + (me.impersonatedBy ? '」（由 ' + me.impersonatedBy + ' 发起）' : '') + '」的身份查看，数据与权限与该账号完全一致。 ');
-      const bExit = el('button', '', '退出模拟');
-      bExit.onclick = () => {
-        sessionStorage.removeItem('qa_imp_token');
-        impToken = '';
-        location.reload();
-      };
-      banner.appendChild(bExit);
-      const appView = $('#app-view');
-      appView.insertBefore(banner, appView.firstChild);
-    }
+    // 模拟登录按需求与正常页面完全一致：不显示任何横幅/提示（退出=关闭该标签页，或重新正式登录）
     resetUserData(); // 清掉上一任用户留在内存里的页面数据（价格/库存/应收/历史），防止越权残留
     newChat();
     loadHistory();
@@ -164,6 +181,7 @@
     stockBatchMode = null;
     stockEdits = {};
     stockDelSel = new Set();
+    stockWhEdits = {};
     recvData = null;
     recvFilter = '';
     recvSel = new Set();
@@ -196,12 +214,7 @@
     const wrap = el('div', 'msg assistant');
     const avatar = el('div', 'avatar', 'AI');
     const content = el('div', 'assistant-content');
-    const p = el('div', 'reply-text',
-      '你好，我是服务器报价助手 👋\n' +
-      '你可以这样用：\n' +
-      '· 指定机型选配：「5280M6，2颗6330N，512G内存，8块1.2T SAS，双口万兆」\n' +
-      '· 只说需求，我自动选总价最低的机型：「要一台48核、256G内存、4块8T SATA盘的机器」\n' +
-      '· 咨询报价原则：「5466M6 内存怎么插」「5280M6 两个显卡怎么配」');
+    const p = el('div', 'reply-text', '您好，亲爱的' + (me && me.username ? me.username : '') + '，我是您的AI助手，让我们开始一天愉快的工作吧！');
     content.appendChild(p);
     wrap.appendChild(avatar);
     wrap.appendChild(content);
@@ -1037,9 +1050,10 @@
   // ---------- 库存表（独立于报价/LLM） ----------
   const ROLE_LABELS = { admin: '管理员', user: '普通用户', uploader: '库存上传员', exporter: '库存导出员' };
   let stockData = null;      // GET /api/stock 结果：{items, lastImportAt, lastImportBy, lastPriceChangeAt, lastPriceChangeBy, canSeePrice, canImport, canExport, canEdit}
-  let stockBatchMode = null; // null | 'edit' | 'delete'（仅 admin）：批量修改=表格里直接改多个格子一次提交；批量删除=勾选删除
-  let stockEdits = {};       // 批量修改进行中的整行副本 {原始货品名称: {name, qty, cost, price, note}}
+  let stockBatchMode = null; // null | 'edit'（admin：整行改+标记删除） | 'wh'（库存导出员：仅改备注库房）
+  let stockEdits = {};       // 批量修改进行中的整行副本 {原始货品名称: {name, qty, cost, price, note, wh}}
   let stockDelSel = new Set(); // 批量删除勾选
+  let stockWhEdits = {};     // 导出员的库房备注编辑副本 {原始货品名称: 新wh}
 
   async function loadStock() {
     const box = $('#stock-content');
@@ -1098,6 +1112,17 @@
       bCancel.onclick = exitStockBatch;
       bar.appendChild(bSave);
       bar.appendChild(bCancel);
+    } else if (!stockData.canEdit && me && me.role === 'exporter' && stockBatchMode === 'wh') {
+      // 库存导出员专用：只能修改「备注（库房）」列
+      bar.classList.add('sticky');
+      bar.appendChild(el('span', 'stock-hint', '你只能修改「备注（库房）」列，其他内容不可修改；改完点「保存库房备注」一次提交'));
+      const n = stockChangedWh().length;
+      const bSave = el('button', 'primary', '💾 保存库房备注（' + n + '）');
+      bSave.onclick = saveStockWhEdit;
+      const bCancel = el('button', '', '取消');
+      bCancel.onclick = exitStockBatch;
+      bar.appendChild(bSave);
+      bar.appendChild(bCancel);
     } else {
       if (stockData.canEdit) {
         const bAdd = el('button', '', '＋ 新增配件');
@@ -1107,6 +1132,11 @@
         bEdit.onclick = enterStockBatchEdit;
         bar.appendChild(bEdit);
         bar.appendChild(el('span', 'stock-hint', '「批量修改」：改格子 + 勾选标记删除，一次保存'));
+      }
+      if (!stockData.canEdit && me && me.role === 'exporter') {
+        const bWh = el('button', 'primary', '✏️ 修改库房备注');
+        bWh.onclick = enterStockWhEdit;
+        bar.appendChild(bWh);
       }
       if (stockData.canImport) {
         const bImport = el('button', '', '⇪ 导入 Excel');
@@ -1141,6 +1171,7 @@
     if (stockData.canSeeCost) heads.push('成本价');
     if (stockData.canSeePrice) heads.push('售价');
     heads.push('备注');
+    heads.push('备注（库房）'); // 所有人可见；仅 admin/库存导出员可修改
     if (stockBatchMode === 'edit') heads.unshift('删?'); // 勾选列（标记删除）
     const trh = el('tr');
     heads.forEach((h) => {
@@ -1169,6 +1200,7 @@
     items.forEach((it) => {
       const marked = stockDelSel.has(it.name);
       if (stockBatchMode === 'edit') tbody.appendChild(marked ? stockPlainRow(it, true, true) : stockEditRow(it));
+      else if (stockBatchMode === 'wh') tbody.appendChild(stockWhRow(it));
       else tbody.appendChild(stockPlainRow(it, false, false));
     });
     if (!items.length) {
@@ -1203,6 +1235,7 @@
     if (stockData.canSeeCost) tr.appendChild(el('td', 'num', fmtCost(it.cost)));
     if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(it.price)));
     tr.appendChild(el('td', 'stock-note', it.note || ''));
+    tr.appendChild(el('td', 'stock-note', it.wh || '')); // 备注（库房）：所有人可见
     return tr;
   }
 
@@ -1248,6 +1281,9 @@
     const noteTd = el('td', 'stock-note');
     noteTd.appendChild(stockCellInput(e.note, (ev) => { e.note = ev.target.value; }, true));
     tr.appendChild(noteTd);
+    const tdWh = el('td', 'stock-note');
+    tdWh.appendChild(stockCellInput(e.wh, (ev) => { e.wh = ev.target.value; }));
+    tr.appendChild(tdWh);
     return tr;
   }
 
@@ -1258,6 +1294,7 @@
       cost: String(Number(it.cost) || 0),
       price: it.price == null ? '' : String(it.price).trim(),
       note: it.note == null ? '' : String(it.note),
+      wh: it.wh == null ? '' : String(it.wh).trim(),
     };
   }
 
@@ -1268,9 +1305,9 @@
       const e = stockEdits[it.name];
       if (!e) return;
       const orig = stockOrigRaw(it);
-      const fields = ['name', 'qty', 'cost', 'price', 'note'];
+      const fields = ['name', 'qty', 'cost', 'price', 'note', 'wh'];
       if (fields.some((f) => String(e[f]).trim() !== orig[f])) {
-        out.push({ name: it.name, item: { name: String(e.name).trim(), qty: e.qty, cost: e.cost, price: String(e.price).trim(), note: e.note } });
+        out.push({ name: it.name, item: { name: String(e.name).trim(), qty: e.qty, cost: e.cost, price: String(e.price).trim(), note: e.note, wh: String(e.wh || '').trim() } });
       }
     });
     return out;
@@ -1288,7 +1325,53 @@
     stockBatchMode = null;
     stockEdits = {};
     stockDelSel = new Set();
+    stockWhEdits = {};
     renderStockPage();
+  }
+
+  // 库存导出员：仅修改「备注（库房）」列（服务端 wh-batch 只写 wh 字段）
+  function stockChangedWh() {
+    const out = [];
+    (stockData.items || []).forEach((it) => {
+      if (stockWhEdits[it.name] === undefined) return;
+      if (String(stockWhEdits[it.name]).trim() !== String(it.wh == null ? '' : it.wh)) {
+        out.push({ name: it.name, wh: String(stockWhEdits[it.name]).trim() });
+      }
+    });
+    return out;
+  }
+
+  function enterStockWhEdit() {
+    stockBatchMode = 'wh';
+    stockWhEdits = {};
+    stockDelSel = new Set();
+    (stockData.items || []).forEach((it) => { stockWhEdits[it.name] = it.wh == null ? '' : String(it.wh); });
+    renderStockPage();
+  }
+
+  async function saveStockWhEdit() {
+    const changes = stockChangedWh();
+    if (!changes.length) { alert('还没有改动：请先在「备注（库房）」列修改内容'); return; }
+    if (!confirm('保存 ' + changes.length + ' 行库房备注？')) return;
+    try {
+      const r = await api('POST', '/api/stock-wh-batch', { changes });
+      alert('已保存 ' + r.applied + ' 行库房备注');
+      exitStockBatch();
+      loadStock();
+    } catch (e) { alert('保存失败：' + e.message); }
+  }
+
+  function stockWhRow(orig) {
+    const tr = el('tr');
+    tr.appendChild(el('td', 'col-name-t', orig.name || ''));
+    tr.appendChild(el('td', 'num', fmtQty(orig.qty)));
+    if (stockData.canSeeCost) tr.appendChild(el('td', 'num', fmtCost(orig.cost)));
+    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(orig.price)));
+    tr.appendChild(el('td', 'stock-note', orig.note || ''));
+    const td = el('td', 'stock-note');
+    td.appendChild(stockCellInput(stockWhEdits[orig.name] || '', (ev) => { stockWhEdits[orig.name] = ev.target.value; }));
+    tr.appendChild(td);
+    return tr;
   }
 
   async function saveStockBatchEdit() {
@@ -1319,6 +1402,7 @@
     const iCost = mk('成本价（如 530）');
     const iPrice = mk('售价（可留空）');
     const iNote = mk('备注（可留空）');
+    const iWh = mk('备注（库房）（可留空）');
     const foot = el('div', 'form-row');
     const bOk = el('button', 'primary', '保存');
     const bCancel = el('button', '', '取消');
@@ -1329,7 +1413,7 @@
       try {
         await api('POST', '/api/stock-item', {
           action: 'upsert', name: '',
-          item: { name, qty: iQty.value, cost: iCost.value, price: iPrice.value, note: iNote.value },
+          item: { name, qty: iQty.value, cost: iCost.value, price: iPrice.value, note: iNote.value, wh: iWh.value },
         });
         closeModal();
         loadStock();
@@ -1412,6 +1496,10 @@
 
   function renderRecvPage() {
     const box = $('#recv-content');
+    // 在清空重建之前记住检索框焦点与光标位置（否则每敲一个字母就因重渲染丢焦点，表现为“输入一个字母就卡住”）
+    const prevSearch = box.querySelector('.recv-client-input');
+    const searchHadFocus = !!(prevSearch && document.activeElement === prevSearch);
+    const searchCaret = searchHadFocus ? prevSearch.selectionStart : null;
     box.innerHTML = '';
     if (!recvData) return;
     const info = $('#recv-info');
@@ -1445,6 +1533,7 @@
       bImport.onclick = () => $('#recv-file').click();
       bar.appendChild(bImport);
     }
+    // 检索框焦点/光标已在函数开头捕获（清空重建前）
     const bExport = el('button', 'primary', '⇩ 导出 Excel' + (recvSel.size ? '（已选 ' + recvSel.size + '）' : ''));
     bExport.onclick = exportRecvExcel;
     bar.appendChild(bExport);
@@ -1461,6 +1550,11 @@
       ? '你看到全部明细' + (recvFilter ? '（经手人：' + recvFilter + '）' : '') + (recvClientFilter ? '（客户含「' + recvClientFilter + '」）' : '') + '；勾选=只导勾选；点击行可修改该条内容（重新导入会被覆盖）'
       : '你只看到自己经手的明细；勾选行后只导出勾选的行，不勾选=全部导出'));
     box.appendChild(bar);
+    // 恢复检索框焦点与光标（修复“输入一个字母就卡住”）
+    if (searchHadFocus) {
+      inClient.focus();
+      try { inClient.setSelectionRange(searchCaret, searchCaret); } catch (e) {}
+    }
 
     if (recvData.canImport && !$('#recv-file')) {
       const fi = el('input');
@@ -2659,6 +2753,19 @@
             };
           }
           row.appendChild(roleSel);
+          const rstPass = el('button', 'u-reset', '🔑 重设密码');
+          rstPass.title = '为该用户设置新密码（用于忘记密码时）：对方当前密码立即失效，下次登录用新密码，登录后会被要求再次修改';
+          rstPass.onclick = async () => {
+            const np = prompt('为「' + u.username + '」设置新密码（至少 6 位）：');
+            if (np === null) return;
+            if (String(np).trim().length < 6) { alert('新密码至少 6 位'); return; }
+            if (!confirm('确认重设「' + u.username + '」的密码？对方当前密码会立即失效。')) return;
+            try {
+              await api('POST', '/api/users-reset-pass', { username: u.username, newPassword: String(np).trim() });
+              alert('已重设「' + u.username + '」的密码。请把新密码告知对方：下次登录用新密码，登录后系统会要求其再次修改。');
+            } catch (e) { alert(e.message); }
+          };
+          row.appendChild(rstPass);
           if (!isSelf) {
             const imp = el('button', 'u-del u-imp', '👁 模拟登录');
             imp.title = '在新标签页以该账号的身份查看系统（对方无需退出，也不影响其密码与数据）';
@@ -2782,7 +2889,11 @@
   if (token || impToken) {
     // 已有 token（或模拟登录）：尝试恢复会话
     api('GET', '/api/me')
-      .then((r) => { me = { username: r.username, role: r.role, impersonatedBy: r.impersonatedBy || '' }; enterApp(); })
+      .then((r) => {
+        me = { username: r.username, role: r.role, impersonatedBy: r.impersonatedBy || '', mustChange: !!r.mustChange };
+        if (r.mustChange) { forceChangePassword(''); return; } // 会话恢复时若仍用初始密码：先强制改密
+        enterApp();
+      })
       .catch(() => {
         if (impToken) { // 模拟 token 失效：只退模拟，不动 admin 自己的登录
           sessionStorage.removeItem('qa_imp_token');
