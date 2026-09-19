@@ -196,6 +196,7 @@ input, textarea { font-family: inherit; outline: none; }
   background: #fff; border-radius: 14px;
   display: flex; flex-direction: column; overflow: hidden;
 }
+.modal-box.modal-wide { width: min(940px, 94vw); } /* 账号管理等宽弹窗 */
 .modal-head {
   display: flex; justify-content: space-between; align-items: center;
   padding: 14px 18px; border-bottom: 1px solid #eef0f2;

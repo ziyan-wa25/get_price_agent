@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-16（零库存标红/fixed列宽/中文检索/重设密码弹窗/导出三列含库房/强制改密/批量改删一体）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-17（账号管理宽弹窗/零库存标红/fixed列宽/中文检索/重设密码弹窗/导出三列含库房）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2632,15 +2632,17 @@
   }
 
   // ---------- 弹窗 ----------
-  function openModal(title) {
+  function openModal(title, wide) {
     $('#modal-title').textContent = title;
     $('#modal-body').innerHTML = '';
+    $('#modal-box').classList.toggle('modal-wide', !!wide); // 账号管理等宽弹窗
     $('#modal-mask').classList.remove('hidden');
   }
 
   function closeModal() {
     $('#modal-mask').classList.add('hidden');
     $('#modal-body').innerHTML = '';
+    $('#modal-box').classList.remove('modal-wide');
   }
 
   function openHistoryModal(h) {
@@ -2709,7 +2711,7 @@
   }
 
   async function openAdminModal() {
-    openModal('账号管理');
+    openModal('账号管理', true); // 加宽弹窗：容纳岗位下拉 + 四个操作按钮 + 登录统计
     const body = $('#modal-body');
 
     const form = el('div', 'form-row');
