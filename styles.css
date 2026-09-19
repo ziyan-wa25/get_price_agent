@@ -403,8 +403,11 @@ tr.batch-del td { background: #fff5f5; }
 .stock-table .col-name { width: 560px; }
 .stock-table .col-num { width: 90px; }
 .stock-table .col-check { width: 40px; }
+/* 库存表/应收明细用固定表格布局：列宽规则是硬性的（auto 布局下浏览器只当建议，视觉几乎不变）。
+   fixed 布局下「没设宽度的列」平分剩余空间——库存表的两条备注列（均分）、应收表的附加说明（独占剩余）就是这么工作的 */
+#stock-content .stock-table, #recv-content .stock-table { width: 100%; table-layout: fixed; }
 /* 货品名称列向左对齐（表头与内容） */
-.stock-table th.col-name, .stock-table td.col-name-t { text-align: left; padding-left: 10px; }
+.stock-table th.col-name, .stock-table td.col-name-t { text-align: left; padding-left: 10px; word-break: break-word; }
 /* 批量修改：悬浮保存条（滚动后仍可点击） */
 .stock-toolbar.sticky {
   position: sticky; top: 8px; z-index: 40;
@@ -414,6 +417,9 @@ tr.batch-del td { background: #fff5f5; }
 /* 批量修改中被标记删除的行：红色底 + 名称划线 */
 tr.stock-row-del td { background: #fdecec; }
 tr.stock-row-del td.col-name-t { color: #b0b3b8; text-decoration: line-through; }
+/* 库存量为 0 的行：整行淡红底，库存量数字标红加粗 */
+tr.stock-row-zero td { background: #fdf2f2; }
+tr.stock-row-zero td.col-qty { color: #d93025; font-weight: 700; }
 /* 应收明细：往来客户检索框 + admin 行编辑悬停 */
 .recv-client-input {
   width: 200px; padding: 6px 10px; font-size: 13px;
@@ -423,9 +429,6 @@ tr.stock-row-del td.col-name-t { color: #b0b3b8; text-decoration: line-through; 
 .recv-table tbody tr.row-editable:hover td { background: #f5f7ff; }
 /* 备注列：自动换行，占满剩余宽度 */
 .stock-note { white-space: pre-wrap; word-break: break-word; }
-/* 「备注」与「备注（库房）」两列均分剩余宽度（货品名称加宽后挤压这两列） */
-.stock-table .stock-note { width: 50%; }
-.stock-table .stock-wh { width: 50%; }
 /* 账号管理里的岗位下拉 */
 .user-row select.u-role {
   border: 1px solid #d9dce1; border-radius: 6px; font-size: 12.5px;
@@ -446,10 +449,10 @@ tr.stock-row-del td.col-name-t { color: #b0b3b8; text-decoration: line-through; 
   border: 1px solid #d9dce1; border-radius: 6px; font-size: 12.5px;
   padding: 5px 8px; background: #fff; color: #333;
 }
-/* 列宽：日期窄、客户/货品适中（客户加宽）、附加说明占满剩余宽度 */
+/* 列宽：日期/勾选窄、客户加宽、货品适中，附加说明占满剩余宽度 */
 .recv-table .col-date { width: 100px; }
 .recv-table .col-client { width: 300px; }
 .recv-table .col-item { width: 250px; }
 .recv-table .col-num { width: 92px; }
 .recv-table .col-op { width: 92px; }
-.recv-table td { max-width: 420px; }
+.recv-table td { word-break: break-word; }

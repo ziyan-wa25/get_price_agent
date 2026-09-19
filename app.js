@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-14（中文检索/重设密码弹窗/导出三列含库房/强制改密/批量改删一体）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-16（零库存标红/fixed列宽/中文检索/重设密码弹窗/导出三列含库房/强制改密/批量改删一体）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1178,6 +1178,7 @@
       let cls = '';
       if (h === '货品名称') cls = 'col-name';
       else if (h === '库存量' || h === '成本价' || h === '售价') cls = 'col-num';
+      else if (h === '删?') cls = 'col-check'; // 勾选列固定窄宽（表格为 fixed 布局）
       trh.appendChild(el('th', cls, h === '删?' ? '删' : h));
     });
     if (stockBatchMode === 'edit') {
@@ -1215,9 +1216,10 @@
   }
 
   function stockPlainRow(it, withCheckbox, marked) {
-    const tr = el('tr', marked ? 'stock-row-del' : '');
+    const zero = Number(it.qty) === 0; // 库存量为 0 的行整行标红提示
+    const tr = el('tr', marked ? 'stock-row-del' : (zero ? 'stock-row-zero' : ''));
     if (withCheckbox) {
-      const tdSel = el('td', 'num');
+      const tdSel = el('td', 'col-check');
       const cb = el('input');
       cb.type = 'checkbox';
       cb.checked = !!marked;
@@ -1231,7 +1233,7 @@
       tr.appendChild(tdSel);
     }
     tr.appendChild(el('td', 'col-name-t', it.name || ''));
-    tr.appendChild(el('td', 'num', fmtQty(it.qty)));
+    tr.appendChild(el('td', 'num col-qty', fmtQty(it.qty)));
     if (stockData.canSeeCost) tr.appendChild(el('td', 'num', fmtCost(it.cost)));
     if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(it.price)));
     tr.appendChild(el('td', 'stock-note', it.note || ''));
@@ -1248,9 +1250,9 @@
 
   function stockEditRow(orig) {
     const e = stockEdits[orig.name];
-    const tr = el('tr');
+    const tr = el('tr', Number(orig.qty) === 0 ? 'stock-row-zero' : ''); // 库存量为 0 的行标红提示
     // 首列：删除标记勾选框（勾选后该行转为红色只读行）
-    const tdSel = el('td', 'num');
+    const tdSel = el('td', 'col-check');
     const cb = el('input');
     cb.type = 'checkbox';
     cb.title = '勾选=标记此行删除';
@@ -1265,7 +1267,7 @@
     const tdName = el('td', 'col-name-t');
     tdName.appendChild(stockCellInput(e.name, (ev) => { e.name = ev.target.value; }, true));
     tr.appendChild(tdName);
-    const tdQty = el('td', 'num');
+    const tdQty = el('td', 'num col-qty');
     tdQty.appendChild(stockCellInput(e.qty, (ev) => { e.qty = ev.target.value; }));
     tr.appendChild(tdQty);
     if (stockData.canSeeCost) {
@@ -1615,7 +1617,7 @@
         tr.title = '点击修改该条内容（重新导入后会被覆盖）';
         tr.onclick = () => openRecvEditModal(r);
       }
-      const tdSel = el('td', 'num');
+      const tdSel = el('td', 'col-check');
       const cb = el('input');
       cb.type = 'checkbox';
       cb.checked = recvSel.has(r.id);
