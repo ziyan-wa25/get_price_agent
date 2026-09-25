@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-17（账号管理宽弹窗/零库存标红/fixed列宽/中文检索/重设密码弹窗/导出三列含库房）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-18（逾期应收标红/登录统计准确/账号管理宽弹窗/零库存标红/fixed列宽/中文检索）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1496,6 +1496,15 @@
     return rows;
   }
 
+  // 日期距今超过两个月（按自然月）→ true；解析失败返回 false
+  function isOverdueDate(dateStr) {
+    const d = new Date(String(dateStr || '').trim());
+    if (isNaN(d.getTime())) return false;
+    const now = new Date();
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
+    return d < cutoff;
+  }
+
   function renderRecvPage() {
     const box = $('#recv-content');
     // 在清空重建之前记住检索框焦点与光标位置（否则每敲一个字母就因重渲染丢焦点，表现为“输入一个字母就卡住”）
@@ -1617,6 +1626,7 @@
         tr.title = '点击修改该条内容（重新导入后会被覆盖）';
         tr.onclick = () => openRecvEditModal(r);
       }
+      if (isOverdueDate(r.date)) tr.classList.add('recv-row-overdue'); // 日期距今超过两个月：整行淡红标示
       const tdSel = el('td', 'col-check');
       const cb = el('input');
       cb.type = 'checkbox';

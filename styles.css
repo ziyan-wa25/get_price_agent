@@ -421,6 +421,9 @@ tr.stock-row-del td.col-name-t { color: #b0b3b8; text-decoration: line-through; 
 /* 库存量为 0 的行：整行淡红底，库存量数字标红加粗 */
 tr.stock-row-zero td { background: #fdf2f2; }
 tr.stock-row-zero td.col-qty { color: #d93025; font-weight: 700; }
+/* 应收明细：日期距今超过两个月的行（淡红底 + 日期红字加粗，样式同零库存行） */
+tr.recv-row-overdue td { background: #fdf2f2; }
+tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* 应收明细：往来客户检索框 + admin 行编辑悬停 */
 .recv-client-input {
   width: 200px; padding: 6px 10px; font-size: 13px;
