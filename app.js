@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-19（网页收藏夹/逾期应收标红/登录统计准确/账号管理宽弹窗/零库存标红）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-20（收藏夹拖动排序/逾期应收标红/登录统计准确/账号管理宽弹窗/零库存标红）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1853,12 +1853,15 @@
     const trh = el('tr');
     trh.appendChild(el('th', 'col-fav-name', '名称'));
     trh.appendChild(el('th', '', '网址'));
-    trh.appendChild(el('th', '', '备注'));
-    if (d.canManage) trh.appendChild(el('th', 'col-fav-op', '操作'));
+    if (d.canManage) {
+      trh.appendChild(el('th', 'col-fav-op', '操作'));
+      trh.appendChild(el('th', 'col-fav-handle', '')); // 拖动排序把手（最右侧）
+    }
     const thead = el('thead');
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
+    let dragId = null; // 正在拖动的收藏 id
     items.forEach((b) => {
       const tr = el('tr');
       const aName = el('a', 'fav-link', b.name || b.url);
@@ -1876,10 +1879,9 @@
       const tdUrl = el('td', 'fav-url-t');
       tdUrl.appendChild(aUrl);
       tr.appendChild(tdUrl);
-      tr.appendChild(el('td', '', b.note || ''));
       if (d.canManage) {
         const tdOp = el('td', 'col-fav-op');
-        const bDel = el('button', 'fav-del', '删除');
+        const bDel = el('button', 'fav-del', '🗑 删除');
         bDel.onclick = async () => {
           if (!confirm('删除收藏「' + (b.name || b.url) + '」？')) return;
           try {
@@ -1889,6 +1891,39 @@
         };
         tdOp.appendChild(bDel);
         tr.appendChild(tdOp);
+        // 拖动排序：把手按住才允许整行拖动，松手保存新顺序
+        const tdHandle = el('td', 'col-fav-handle');
+        const handle = el('span', 'fav-handle', '⠿');
+        handle.title = '按住拖动调整顺序';
+        handle.addEventListener('mousedown', () => { tr.draggable = true; });
+        tr.addEventListener('dragstart', (e) => {
+          dragId = b.id;
+          tr.classList.add('dragging');
+          if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', b.id); } catch (err) {} }
+        });
+        tr.addEventListener('dragover', (e) => { e.preventDefault(); if (dragId && dragId !== b.id) tr.classList.add('drag-over'); });
+        tr.addEventListener('dragleave', () => { tr.classList.remove('drag-over'); });
+        tr.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          tr.classList.remove('drag-over');
+          if (!dragId || dragId === b.id) return;
+          const list = (favData && favData.items) || [];
+          const from = list.findIndex((x) => x.id === dragId);
+          const to = list.findIndex((x) => x.id === b.id);
+          if (from < 0 || to < 0) return;
+          const moved = list.splice(from, 1)[0];
+          list.splice(to, 0, moved);
+          renderFavPage(); // 乐观更新
+          try {
+            await api('POST', '/api/bookmarks-item', { action: 'reorder', ids: list.map((x) => x.id) });
+          } catch (e2) {
+            alert('保存排序失败：' + e2.message);
+            loadFav();
+          }
+        });
+        tr.addEventListener('dragend', () => { tr.classList.remove('dragging', 'drag-over'); tr.draggable = false; dragId = null; });
+        tdHandle.appendChild(handle);
+        tr.appendChild(tdHandle);
       }
       tbody.appendChild(tr);
     });
@@ -1902,8 +1937,7 @@
     body.appendChild(el('div', 'modal-hint', '保存后所有人都能看到；点击会在新标签页打开。网址没写协议会自动补 https://。'));
     const iName = el('input'); iName.placeholder = '名称（必填，如：阿里云控制台）';
     const iUrl = el('input'); iUrl.placeholder = '网址（必填，可直接填 example.com）';
-    const iNote = el('input'); iNote.placeholder = '备注（可留空）';
-    [iName, iUrl, iNote].forEach((x) => { x.style.marginBottom = '10px'; x.style.width = '100%'; x.style.padding = '9px 10px'; x.style.border = '1px solid #d9dce1'; x.style.borderRadius = '8px'; body.appendChild(x); });
+    [iName, iUrl].forEach((x) => { x.style.marginBottom = '10px'; x.style.width = '100%'; x.style.padding = '9px 10px'; x.style.border = '1px solid #d9dce1'; x.style.borderRadius = '8px'; body.appendChild(x); });
     const foot = el('div', 'form-row');
     const bOk = el('button', 'primary', '保存');
     const bCancel = el('button', '', '取消');
@@ -1918,7 +1952,7 @@
       if (!url) { alert('请输入网址'); return; }
       bOk.disabled = true;
       try {
-        await api('POST', '/api/bookmarks-item', { action: 'add', item: { name, url, note: iNote.value.trim() } });
+        await api('POST', '/api/bookmarks-item', { action: 'add', item: { name, url } });
         closeModal();
         loadFav();
       } catch (e) { alert(e.message); }

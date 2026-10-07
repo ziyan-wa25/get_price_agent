@@ -424,24 +424,29 @@ tr.stock-row-zero td.col-qty { color: #d93025; font-weight: 700; }
 /* 应收明细：日期距今超过两个月的行（淡红底 + 日期红字加粗，样式同零库存行） */
 tr.recv-row-overdue td { background: #fdf2f2; }
 tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
-/* 网页收藏夹（与库存/应收同风格：格子线表格 + 固定布局） */
+/* 网页收藏夹（与库存/应收同风格：格子线表格 + 固定布局；字号更大） */
 #fav-content .stock-table th, #fav-content .stock-table td {
-  border: 1px solid #e3e5e9; text-align: center; vertical-align: middle; padding: 8px 10px;
+  border: 1px solid #e3e5e9; text-align: center; vertical-align: middle; padding: 11px 12px; font-size: 15px;
 }
-#fav-content .stock-table th { background: #f7f8fa; }
+#fav-content .stock-table th { background: #f7f8fa; font-weight: 600; }
 #fav-content .stock-table { width: 100%; table-layout: fixed; }
 #fav-content td { word-break: break-word; }
-#fav-content .col-fav-name { width: 240px; }
-#fav-content .col-fav-name-t { text-align: left; padding-left: 10px; }
-#fav-content .col-fav-op { width: 88px; }
+#fav-content .col-fav-name { width: 280px; }
+#fav-content .col-fav-name-t { text-align: left; padding-left: 12px; }
+#fav-content .col-fav-op { width: 110px; }
+#fav-content .col-fav-handle { width: 52px; }
 .fav-link { color: #1a56db; text-decoration: none; }
 .fav-link:hover { text-decoration: underline; }
-.fav-url-t { text-align: left; color: #666; font-size: 12.5px; }
+.fav-url-t { text-align: left; color: #555; }
 .fav-del {
-  padding: 3px 10px; font-size: 12px;
+  padding: 4px 12px; font-size: 13px;
   border: 1px solid #f0c1c1; border-radius: 6px; background: #fff5f5; color: #d93025;
 }
 .fav-del:hover { background: #ffe9e7; }
+.fav-handle { cursor: grab; color: #b6bac2; font-size: 18px; user-select: none; letter-spacing: 1px; }
+.fav-handle:active { cursor: grabbing; color: #4d6bfe; }
+#fav-content tr.dragging td { opacity: .45; }
+#fav-content tr.drag-over td { background: #f5f8ff; border-top: 2px solid #4d6bfe; }
 /* 应收明细：往来客户检索框 + admin 行编辑悬停 */
 .recv-client-input {
   width: 200px; padding: 6px 10px; font-size: 13px;
