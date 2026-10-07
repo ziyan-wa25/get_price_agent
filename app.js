@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-18（逾期应收标红/登录统计准确/账号管理宽弹窗/零库存标红/fixed列宽/中文检索）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-19（网页收藏夹/逾期应收标红/登录统计准确/账号管理宽弹窗/零库存标红）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -186,6 +186,8 @@
     recvFilter = '';
     recvSel = new Set();
     recvClientFilter = '';
+    favData = null;
+    $('#fav-content').innerHTML = '';
     priceData = null;
     priceTotal = [];
     priceMachineId = null;
@@ -1807,17 +1809,137 @@
   };
   const CAT_ORDER = ['bare', 'cpu', 'memory', 'disk', 'backplane', 'raid', 'nic', 'hba', 'power', 'riser', 'other'];
 
+  // ---------- 网页收藏夹（admin 可增删，所有人可见可点击，新标签页打开） ----------
+  let favData = null;
+
+  async function loadFav() {
+    const box = $('#fav-content');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      favData = await api('GET', '/api/bookmarks');
+      renderFavPage();
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
+  function renderFavPage() {
+    const box = $('#fav-content');
+    const info = $('#fav-info');
+    info.innerHTML = '';
+    const d = favData || { items: [], canManage: false };
+    if (d.updatedAt) {
+      info.appendChild(el('span', 'stock-import-time', '🕐 最近一次修改：' + new Date(d.updatedAt).toLocaleString('zh-CN') + (d.updatedBy ? '（' + d.updatedBy + '）' : '')));
+    }
+    const bar = el('div', 'stock-toolbar');
+    if (d.canManage) {
+      const bAdd = el('button', 'primary', '＋ 新增收藏');
+      bAdd.onclick = openFavAddModal;
+      bar.appendChild(bAdd);
+      bar.appendChild(el('span', 'stock-hint', '新增后所有人都能看到；点击名称或网址会在新标签页打开'));
+    } else {
+      bar.appendChild(el('span', 'stock-hint', '点击名称或网址即可在新标签页打开（内容由管理员维护）'));
+    }
+    box.innerHTML = '';
+    box.appendChild(bar);
+    const items = d.items || [];
+    if (!items.length) {
+      box.appendChild(el('div', 'modal-hint', d.canManage ? '还没有收藏的网页：点「＋ 新增收藏」添加第一个' : '管理员还没有添加收藏网页'));
+      return;
+    }
+    const tbl = el('table', 'stock-table fav-table');
+    const trh = el('tr');
+    trh.appendChild(el('th', 'col-fav-name', '名称'));
+    trh.appendChild(el('th', '', '网址'));
+    trh.appendChild(el('th', '', '备注'));
+    if (d.canManage) trh.appendChild(el('th', 'col-fav-op', '操作'));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    items.forEach((b) => {
+      const tr = el('tr');
+      const aName = el('a', 'fav-link', b.name || b.url);
+      aName.href = b.url;
+      aName.target = '_blank'; // 在新标签页打开
+      aName.rel = 'noopener noreferrer';
+      const tdName = el('td', 'col-fav-name-t');
+      tdName.appendChild(aName);
+      tr.appendChild(tdName);
+      const aUrl = el('a', 'fav-link fav-url', b.url);
+      aUrl.href = b.url;
+      aUrl.target = '_blank';
+      aUrl.rel = 'noopener noreferrer';
+      aUrl.title = b.url;
+      const tdUrl = el('td', 'fav-url-t');
+      tdUrl.appendChild(aUrl);
+      tr.appendChild(tdUrl);
+      tr.appendChild(el('td', '', b.note || ''));
+      if (d.canManage) {
+        const tdOp = el('td', 'col-fav-op');
+        const bDel = el('button', 'fav-del', '删除');
+        bDel.onclick = async () => {
+          if (!confirm('删除收藏「' + (b.name || b.url) + '」？')) return;
+          try {
+            await api('POST', '/api/bookmarks-item', { action: 'delete', id: b.id });
+            loadFav();
+          } catch (e) { alert(e.message); }
+        };
+        tdOp.appendChild(bDel);
+        tr.appendChild(tdOp);
+      }
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+  }
+
+  function openFavAddModal() {
+    openModal('新增收藏网页');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '保存后所有人都能看到；点击会在新标签页打开。网址没写协议会自动补 https://。'));
+    const iName = el('input'); iName.placeholder = '名称（必填，如：阿里云控制台）';
+    const iUrl = el('input'); iUrl.placeholder = '网址（必填，可直接填 example.com）';
+    const iNote = el('input'); iNote.placeholder = '备注（可留空）';
+    [iName, iUrl, iNote].forEach((x) => { x.style.marginBottom = '10px'; x.style.width = '100%'; x.style.padding = '9px 10px'; x.style.border = '1px solid #d9dce1'; x.style.borderRadius = '8px'; body.appendChild(x); });
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', '保存');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    foot.appendChild(bOk);
+    foot.appendChild(bCancel);
+    body.appendChild(foot);
+    bOk.onclick = async () => {
+      const name = iName.value.trim();
+      const url = iUrl.value.trim();
+      if (!name) { alert('请输入名称'); return; }
+      if (!url) { alert('请输入网址'); return; }
+      bOk.disabled = true;
+      try {
+        await api('POST', '/api/bookmarks-item', { action: 'add', item: { name, url, note: iNote.value.trim() } });
+        closeModal();
+        loadFav();
+      } catch (e) { alert(e.message); }
+      finally { bOk.disabled = false; }
+    };
+  }
+
   function showPage(p) {
     $('#chat-page').classList.toggle('hidden', p !== 'chat');
     $('#price-page').classList.toggle('hidden', p !== 'price');
     $('#stock-page').classList.toggle('hidden', p !== 'stock');
     $('#recv-page').classList.toggle('hidden', p !== 'recv');
+    $('#fav-page').classList.toggle('hidden', p !== 'fav');
     $('#btn-prices').classList.toggle('active', p === 'price');
     $('#btn-stock').classList.toggle('active', p === 'stock');
     $('#btn-recv').classList.toggle('active', p === 'recv');
+    $('#btn-fav').classList.toggle('active', p === 'fav');
     if (p === 'price') loadPriceData();
     if (p === 'stock') loadStock();
     if (p === 'recv') loadRecv();
+    if (p === 'fav') loadFav();
   }
 
   let priceEdit = null; // 价格表改价进行中 {name, value}
@@ -2905,6 +3027,7 @@
   $('#btn-prices').onclick = () => showPage('price');
   $('#btn-stock').onclick = () => showPage('stock');
   $('#btn-recv').onclick = () => showPage('recv');
+  $('#btn-fav').onclick = () => showPage('fav');
   $('#stock-search').oninput = () => renderStockPage();
   $('#btn-logout').onclick = () => doLogout(false);
   $('#btn-admin').onclick = openAdminModal;
