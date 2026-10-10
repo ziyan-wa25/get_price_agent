@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-21（收藏夹可见人员/拖动排序/逾期应收标红/登录统计准确/账号管理宽弹窗）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-22（收藏夹列序：把手最后/可见人员/拖动排序/逾期应收标红/登录统计准确）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1862,8 +1862,8 @@
     trh.appendChild(el('th', '', '网址'));
     if (d.canManage) {
       trh.appendChild(el('th', 'col-fav-op', '操作'));
-      trh.appendChild(el('th', 'col-fav-handle', '')); // 拖动排序把手（最右侧）
       trh.appendChild(el('th', 'col-fav-vis', '可见人员')); // 管理可见成员（仅 admin）
+      trh.appendChild(el('th', 'col-fav-handle', '')); // 拖动排序把手（最右侧）
     }
     const thead = el('thead');
     thead.appendChild(trh);
@@ -1931,8 +1931,7 @@
         });
         tr.addEventListener('dragend', () => { tr.classList.remove('dragging', 'drag-over'); tr.draggable = false; dragId = null; });
         tdHandle.appendChild(handle);
-        tr.appendChild(tdHandle);
-        // 可见人员下拉菜单（拖动把手后面）：选哪些成员可以看到这条收藏
+        // 可见人员下拉菜单（把手前面）：选哪些成员可以看到这条收藏
         const tdVis = el('td', 'col-fav-vis');
         const visBtn = el('button', 'fav-vis-btn', favVisLabel(b));
         visBtn.title = '设置哪些成员可以看到这条收藏';
@@ -1954,7 +1953,8 @@
         });
         tdVis.appendChild(visBtn);
         tdVis.appendChild(visPanel);
-        tr.appendChild(tdVis);
+        tr.appendChild(tdVis); // 可见人员在把手之前
+        tr.appendChild(tdHandle); // 把手固定在行尾
       }
       tbody.appendChild(tr);
     });
