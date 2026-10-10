@@ -435,6 +435,36 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 #fav-content .col-fav-name-t { text-align: left; padding-left: 12px; }
 #fav-content .col-fav-op { width: 110px; }
 #fav-content .col-fav-handle { width: 52px; }
+#fav-content .col-fav-vis { width: 150px; }
+/* 可见人员下拉菜单 */
+.fav-vis-btn {
+  padding: 4px 10px; font-size: 12.5px;
+  border: 1px solid #d9dce1; border-radius: 6px; background: #fff; color: #444;
+}
+.fav-vis-btn:hover { border-color: #4d6bfe; color: #4d6bfe; }
+.fav-vis-panel {
+  position: absolute; right: 10px; top: 100%; z-index: 70;
+  width: 260px; max-height: 320px; overflow-y: auto;
+  background: #fff; border: 1px solid #d9dce1; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(31, 41, 55, .18);
+  padding: 8px; text-align: left; cursor: default;
+}
+.fav-vis-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; font-size: 13px; margin-bottom: 6px;
+}
+.fav-vis-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 5px; font-size: 13.5px; border-radius: 6px; cursor: pointer;
+}
+.fav-vis-item:hover { background: #f5f8ff; }
+.fav-vis-all { font-weight: 600; border-bottom: 1px solid #eef0f2; border-radius: 0; padding-bottom: 8px; margin-bottom: 4px; }
+.fav-vis-role { color: #999; font-size: 11.5px; margin-left: auto; }
+.fav-vis-mini {
+  font-size: 11.5px; padding: 2px 9px;
+  border: 1px solid #d9dce1; border-radius: 6px; background: #fff; color: #444;
+}
+.fav-vis-mini:hover { border-color: #4d6bfe; color: #4d6bfe; }
 .fav-link { color: #1a56db; text-decoration: none; }
 .fav-link:hover { text-decoration: underline; }
 .fav-url-t { text-align: left; color: #555; }

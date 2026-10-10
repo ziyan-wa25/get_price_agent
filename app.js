@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-20（收藏夹拖动排序/逾期应收标红/登录统计准确/账号管理宽弹窗/零库存标红）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-21（收藏夹可见人员/拖动排序/逾期应收标红/登录统计准确/账号管理宽弹窗）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -187,6 +187,7 @@
     recvSel = new Set();
     recvClientFilter = '';
     favData = null;
+    favUsers = null;
     $('#fav-content').innerHTML = '';
     priceData = null;
     priceTotal = [];
@@ -1811,6 +1812,12 @@
 
   // ---------- 网页收藏夹（admin 可增删，所有人可见可点击，新标签页打开） ----------
   let favData = null;
+  let favUsers = null; // 成员列表（admin 打开可见人员菜单时加载一次）
+
+  // 点击页面其他位置时关闭可见人员下拉
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.fav-vis-panel').forEach((p) => p.classList.add('hidden'));
+  });
 
   async function loadFav() {
     const box = $('#fav-content');
@@ -1856,6 +1863,7 @@
     if (d.canManage) {
       trh.appendChild(el('th', 'col-fav-op', '操作'));
       trh.appendChild(el('th', 'col-fav-handle', '')); // 拖动排序把手（最右侧）
+      trh.appendChild(el('th', 'col-fav-vis', '可见人员')); // 管理可见成员（仅 admin）
     }
     const thead = el('thead');
     thead.appendChild(trh);
@@ -1924,11 +1932,107 @@
         tr.addEventListener('dragend', () => { tr.classList.remove('dragging', 'drag-over'); tr.draggable = false; dragId = null; });
         tdHandle.appendChild(handle);
         tr.appendChild(tdHandle);
+        // 可见人员下拉菜单（拖动把手后面）：选哪些成员可以看到这条收藏
+        const tdVis = el('td', 'col-fav-vis');
+        const visBtn = el('button', 'fav-vis-btn', favVisLabel(b));
+        visBtn.title = '设置哪些成员可以看到这条收藏';
+        const visPanel = el('div', 'fav-vis-panel hidden');
+        let visBuilt = false;
+        visBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const wasOpen = !visPanel.classList.contains('hidden');
+          document.querySelectorAll('.fav-vis-panel').forEach((p) => p.classList.add('hidden'));
+          if (wasOpen) return;
+          if (!favUsers) {
+            try {
+              const ur = await api('GET', '/api/users');
+              favUsers = (ur.users || []).map((u) => ({ username: u.username, role: u.role }));
+            } catch (err) { favUsers = []; }
+          }
+          if (!visBuilt) { buildFavVisPanel(visPanel, b, visBtn); visBuilt = true; }
+          visPanel.classList.remove('hidden');
+        });
+        tdVis.appendChild(visBtn);
+        tdVis.appendChild(visPanel);
+        tr.appendChild(tdVis);
       }
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
     box.appendChild(tbl);
+  }
+
+  // 收藏夹可见人员：visibleTo 空数组/未设置 = 所有人可见
+  function favIsPublic(b) { return !Array.isArray(b.visibleTo) || !b.visibleTo.length; }
+  function favVisLabel(b) { return favIsPublic(b) ? '👥 所有人' : '👥 可见 ' + b.visibleTo.length + ' 人'; }
+
+  function buildFavVisPanel(panel, b, visBtn) {
+    panel.addEventListener('click', (e) => e.stopPropagation()); // 点面板内部不关闭
+    const head = el('div', 'fav-vis-head');
+    head.appendChild(el('span', '', '可见人员'));
+    const bAll = el('button', 'fav-vis-mini', '全选');
+    head.appendChild(bAll);
+    panel.appendChild(head);
+    // 「所有成员」= 全选：勾上即所有人可见（含以后新增的账号？不——与全选同义，即当前全部成员）
+    const publicRow = el('label', 'fav-vis-item fav-vis-all');
+    const cbAll = el('input');
+    cbAll.type = 'checkbox';
+    publicRow.appendChild(cbAll);
+    publicRow.appendChild(el('span', '', '所有成员（等同于全选）'));
+    panel.appendChild(publicRow);
+    const roleText = (role) => (role === 'admin' ? '管理员' : (role === 'uploader' ? '库存上传员' : (role === 'exporter' ? '库存导出员' : '普通用户')));
+    const cbs = [];
+    (favUsers || []).forEach((u) => {
+      if (u.username === me.username) return; // admin 自己始终可见，不列进名单
+      const lab = el('label', 'fav-vis-item');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = favIsPublic(b) || (b.visibleTo || []).includes(u.username);
+      lab.appendChild(cb);
+      lab.appendChild(el('span', '', u.username));
+      lab.appendChild(el('span', 'fav-vis-role', roleText(u.role)));
+      panel.appendChild(lab);
+      cbs.push({ cb, name: u.username });
+    });
+    const publicChecked = () => cbs.length > 0 && cbs.every((x) => x.cb.checked);
+    cbAll.checked = favIsPublic(b) || publicChecked();
+    async function saveVis(vis) {
+      try {
+        const r = await api('POST', '/api/bookmarks-item', { action: 'visibility', id: b.id, visibleTo: vis });
+        b.visibleTo = Array.isArray(r.visibleTo) ? r.visibleTo : [];
+        visBtn.textContent = favVisLabel(b);
+      } catch (e) {
+        alert('保存可见人员失败：' + e.message);
+        loadFav();
+      }
+    }
+    cbAll.onchange = () => {
+      if (cbAll.checked) {
+        cbs.forEach((x) => { x.cb.checked = true; });
+        saveVis([]); // 全部成员勾选 = 所有人可见
+      } else {
+        const names = cbs.filter((x) => x.cb.checked).map((x) => x.name);
+        if (!names.length) { cbAll.checked = true; alert('至少保留一名成员可见'); return; }
+        saveVis(names); // 保持当前勾选为自定义名单
+      }
+    };
+    bAll.onclick = () => {
+      cbs.forEach((x) => { x.cb.checked = true; });
+      cbAll.checked = true;
+      saveVis([]);
+    };
+    cbs.forEach(({ cb, name }) => {
+      cb.onchange = () => {
+        if (!cbs.some((x) => x.cb.checked)) {
+          cb.checked = true; // 至少保留一名
+          alert('至少保留一名成员可见；要恢复所有人可见请勾选「所有成员」');
+          return;
+        }
+        const all = publicChecked();
+        cbAll.checked = all;
+        saveVis(all ? [] : cbs.filter((x) => x.cb.checked).map((x) => x.name));
+      };
+    });
   }
 
   function openFavAddModal() {
