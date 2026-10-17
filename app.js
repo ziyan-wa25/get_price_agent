@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-23（可见人员弹窗/收藏夹拖动排序/逾期应收标红/登录统计准确/账号管理宽弹窗）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-25（进项统计搜索/发票进项统计/参考者岗位/可见人员弹窗/拖动排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -188,7 +188,10 @@
     recvClientFilter = '';
     favData = null;
     favUsers = null;
+    invData = null;
     $('#fav-content').innerHTML = '';
+    $('#inv-content').innerHTML = '';
+    $('#inv-info').innerHTML = '';
     priceData = null;
     priceTotal = [];
     priceMachineId = null;
@@ -1051,7 +1054,7 @@
 
   // ---------- 历史 ----------
   // ---------- 库存表（独立于报价/LLM） ----------
-  const ROLE_LABELS = { admin: '管理员', user: '普通用户', uploader: '库存上传员', exporter: '库存导出员' };
+  const ROLE_LABELS = { admin: '管理员', user: '普通用户', uploader: '库存上传员', exporter: '库存导出员', referrer: '参考者' };
   let stockData = null;      // GET /api/stock 结果：{items, lastImportAt, lastImportBy, lastPriceChangeAt, lastPriceChangeBy, canSeePrice, canImport, canExport, canEdit}
   let stockBatchMode = null; // null | 'edit'（admin：整行改+标记删除） | 'wh'（库存导出员：仅改备注库房）
   let stockEdits = {};       // 批量修改进行中的整行副本 {原始货品名称: {name, qty, cost, price, note, wh}}
@@ -1967,7 +1970,7 @@
     publicRow.appendChild(cbAll);
     publicRow.appendChild(el('span', '', '所有成员（等同于全选：所有人可见）'));
     body.appendChild(publicRow);
-    const roleText = (role) => (role === 'admin' ? '管理员' : (role === 'uploader' ? '库存上传员' : (role === 'exporter' ? '库存导出员' : '普通用户')));
+    const roleText = (role) => (role === 'admin' ? '管理员' : (role === 'uploader' ? '库存上传员' : (role === 'exporter' ? '库存导出员' : (role === 'referrer' ? '参考者' : '普通用户'))));
     const members = (favUsers || []).filter((u) => u.username !== me.username); // admin 自己始终可见，不列进名单
     members.forEach((u) => {
       const lab = el('label', 'fav-vis-item');
@@ -2039,19 +2042,120 @@
     };
   }
 
+  // ---------- 发票进项统计（admin/库存上传员导入，所有登录用户可见，无导出） ----------
+  let invData = null; // GET /api/invoices 结果 {items, canImport, lastImportAt, lastImportBy}
+
+  async function loadInv() {
+    const box = $('#inv-content');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      invData = await api('GET', '/api/invoices');
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+      return;
+    }
+    renderInvPage();
+  }
+
+  function invFiltered() {
+    const kw = ($('#inv-search').value || '').trim().toLowerCase();
+    const items = (invData && invData.items) || [];
+    if (!kw) return items;
+    return items.filter((it) => String(it.name).toLowerCase().indexOf(kw) !== -1
+      || String(it.model || '').toLowerCase().indexOf(kw) !== -1);
+  }
+
+  function renderInvPage() {
+    const box = $('#inv-content');
+    const info = $('#inv-info');
+    box.innerHTML = '';
+    const d = invData || { items: [] };
+    const kw = ($('#inv-search').value || '').trim();
+    const items = invFiltered();
+    info.innerHTML = '';
+    info.appendChild(el('span', '', (kw ? '匹配 ' + items.length + ' 项 / ' : '共 ' + (d.items || []).length + ' 项')
+      + (d.lastImportAt ? '，更新于 ' + new Date(d.lastImportAt).toLocaleString('zh-CN') + '（' + (d.lastImportBy || '') + '）' : '')));
+    const bar = el('div', 'stock-toolbar');
+    if (d.canImport) {
+      const bImport = el('button', '', '⇪ 导入 Excel');
+      bImport.onclick = () => $('#inv-file').click();
+      bar.appendChild(bImport);
+      bar.appendChild(el('span', 'stock-hint', '导入规则：三组并排的进项表自动摊平（数量入/数量出不导入）；同键（货物名称+型号）更新；Excel 没有、表里有的行保留不清零；同键多行取第一行'));
+    }
+    if (bar.children.length) box.appendChild(bar);
+    if (d.canImport && !$('#inv-file')) {
+      const fi = el('input');
+      fi.type = 'file';
+      fi.id = 'inv-file';
+      fi.accept = '.xls,.xlsx';
+      fi.style.display = 'none';
+      fi.onchange = onInvFilePicked;
+      box.appendChild(fi);
+    }
+    const tbl = el('table', 'stock-table');
+    const thead = el('thead');
+    const trh = el('tr');
+    trh.appendChild(el('th', 'col-name', '货物名称'));
+    trh.appendChild(el('th', '', '型号'));
+    trh.appendChild(el('th', 'col-num', '单位'));
+    trh.appendChild(el('th', 'col-inv-rem', '剩余数量'));
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    items.forEach((it) => {
+      const zero = Number(it.remaining) <= 0; // 剩余数量 ≤0 的行整行标红（与库存表零库存标红一致）
+      const tr = el('tr', zero ? 'inv-row-zero' : '');
+      tr.appendChild(el('td', 'col-name-t', it.name || ''));
+      tr.appendChild(el('td', 'col-inv-model-t', it.model || ''));
+      tr.appendChild(el('td', '', it.unit || ''));
+      tr.appendChild(el('td', 'num', String(it.remaining)));
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+    if (!items.length) {
+      box.appendChild(el('div', 'modal-hint', kw ? '没有匹配的货物' : (d.lastImportAt ? '没有数据' : '还没有数据：请点「导入 Excel」选择进项表（三组并排版式自动摊平）')));
+    }
+  }
+
+  async function onInvFilePicked(e) {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    let b64;
+    try {
+      b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+        r.onerror = () => reject(new Error('读取文件失败'));
+        r.readAsDataURL(f);
+      });
+    } catch (err) { alert(err.message); return; }
+    try {
+      const r = await api('POST', '/api/invoices-import', { dataBase64: b64 });
+      alert('导入完成：新增 ' + r.added + ' 行，更新 ' + r.updated + ' 行，同键重复跳过 ' + (r.dupSkipped || 0) + ' 行');
+      loadInv();
+    } catch (err) { alert('导入失败：' + err.message); }
+  }
+
   function showPage(p) {
     $('#chat-page').classList.toggle('hidden', p !== 'chat');
     $('#price-page').classList.toggle('hidden', p !== 'price');
     $('#stock-page').classList.toggle('hidden', p !== 'stock');
     $('#recv-page').classList.toggle('hidden', p !== 'recv');
+    $('#inv-page').classList.toggle('hidden', p !== 'inv');
     $('#fav-page').classList.toggle('hidden', p !== 'fav');
     $('#btn-prices').classList.toggle('active', p === 'price');
     $('#btn-stock').classList.toggle('active', p === 'stock');
     $('#btn-recv').classList.toggle('active', p === 'recv');
+    $('#btn-inv').classList.toggle('active', p === 'inv');
     $('#btn-fav').classList.toggle('active', p === 'fav');
     if (p === 'price') loadPriceData();
     if (p === 'stock') loadStock();
     if (p === 'recv') loadRecv();
+    if (p === 'inv') loadInv();
     if (p === 'fav') loadFav();
   }
 
@@ -2965,7 +3069,7 @@
     const btnAdd = el('button', '', '添加账号');
     form.appendChild(inUser); form.appendChild(inPass); form.appendChild(btnAdd);
     body.appendChild(form);
-    const hint = el('div', 'modal-hint', '岗位说明：管理员=全部权限（含库存编辑/成本价）；普通用户=报价与查看库存（可见售价）；库存上传员=可导入库存与应收明细；库存导出员=可导出库存。删除规则：admin 可以删除任何人（历史报价一并删除），唯独不能删除自己。');
+    const hint = el('div', 'modal-hint', '岗位说明：管理员=全部权限（含库存编辑/成本价）；普通用户=报价与查看库存（可见售价）；库存上传员=可导入库存与应收明细；库存导出员=可导出库存；参考者=普通用户权限+库存页价格全可见+库存导出六列完整（同 admin）。删除规则：admin 可以删除任何人（历史报价一并删除），唯独不能删除自己。');
     body.appendChild(hint);
 
     const listBox = el('div');
@@ -3140,8 +3244,10 @@
   $('#btn-prices').onclick = () => showPage('price');
   $('#btn-stock').onclick = () => showPage('stock');
   $('#btn-recv').onclick = () => showPage('recv');
+  $('#btn-inv').onclick = () => showPage('inv');
   $('#btn-fav').onclick = () => showPage('fav');
   $('#stock-search').oninput = () => renderStockPage();
+  $('#inv-search').oninput = () => renderInvPage();
   $('#btn-logout').onclick = () => doLogout(false);
   $('#btn-admin').onclick = openAdminModal;
   $('#btn-change-pass').onclick = openChangePassModal;

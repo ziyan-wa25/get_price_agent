@@ -404,9 +404,16 @@ tr.batch-del td { background: #fff5f5; }
 .stock-table .col-name { width: 560px; }
 .stock-table .col-num { width: 90px; }
 .stock-table .col-check { width: 40px; }
-/* 库存表/应收明细用固定表格布局：列宽规则是硬性的（auto 布局下浏览器只当建议，视觉几乎不变）。
-   fixed 布局下「没设宽度的列」平分剩余空间——库存表的两条备注列（均分）、应收表的附加说明（独占剩余）就是这么工作的 */
-#stock-content .stock-table, #recv-content .stock-table { width: 100%; table-layout: fixed; }
+/* 库存表/应收明细/发票进项统计用固定表格布局：列宽规则是硬性的（auto 布局下浏览器只当建议，视觉几乎不变）。
+   fixed 布局下「没设宽度的列」平分剩余空间——库存表的两条备注列（均分）、应收表的附加说明（独占剩余）、
+   进项表的型号列（独占剩余）就是这么工作的 */
+#stock-content .stock-table, #recv-content .stock-table, #inv-content .stock-table { width: 100%; table-layout: fixed; }
+/* 发票进项统计：剩余数量列窄列 */
+.stock-table .col-inv-rem { width: 110px; }
+.stock-table td.col-inv-model-t { text-align: left; padding-left: 10px; word-break: break-word; }
+/* 剩余数量 ≤0 的行：整行淡红底，剩余数量数字标红加粗（与库存表零库存标红一致） */
+tr.inv-row-zero td { background: #fdf2f2; }
+tr.inv-row-zero td.num { color: #d93025; font-weight: 700; }
 /* 货品名称列向左对齐（表头与内容） */
 .stock-table th.col-name, .stock-table td.col-name-t { text-align: left; padding-left: 10px; word-break: break-word; }
 /* 批量修改：悬浮保存条（滚动后仍可点击） */
