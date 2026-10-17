@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-25（进项统计搜索/发票进项统计/参考者岗位/可见人员弹窗/拖动排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-26（进项统计最近导入/搜索/参考者岗位/可见人员弹窗/拖动排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2075,8 +2075,12 @@
     const kw = ($('#inv-search').value || '').trim();
     const items = invFiltered();
     info.innerHTML = '';
-    info.appendChild(el('span', '', (kw ? '匹配 ' + items.length + ' 项 / ' : '共 ' + (d.items || []).length + ' 项')
-      + (d.lastImportAt ? '，更新于 ' + new Date(d.lastImportAt).toLocaleString('zh-CN') + '（' + (d.lastImportBy || '') + '）' : '')));
+    // 与库存表看齐：🕐 最近一次导入：时间（人）
+    const it = d.lastImportAt
+      ? new Date(d.lastImportAt).toLocaleString('zh-CN') + (d.lastImportBy ? '（' + d.lastImportBy + '）' : '')
+      : '尚未导入过';
+    info.appendChild(el('span', '', (kw ? '匹配 ' + items.length + ' 项（共 ' + (d.items || []).length + ' 项）　' : '共 ' + (d.items || []).length + ' 项　')));
+    info.appendChild(el('span', 'stock-import-time', '🕐 最近一次导入：' + it));
     const bar = el('div', 'stock-toolbar');
     if (d.canImport) {
       const bImport = el('button', '', '⇪ 导入 Excel');
