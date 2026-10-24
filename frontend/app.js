@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-29（桌面版诊断/Tauri）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-31（手机底部导航/抽屉布局）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3275,6 +3275,25 @@
     priceKeyword = $('#price-search').value;
     renderPriceTable();
   });
+
+  // ---------- 手机底部导航（≤768px 显示；点击转发到侧栏对应按钮，逻辑零重复） ----------
+  (function () {
+    const mnav = $('#mobile-nav');
+    const mmask = $('#mobile-mask');
+    if (!mnav || !mmask) return;
+    const closeDrawer = () => document.body.classList.remove('m-drawer-open');
+    mnav.addEventListener('click', (e) => {
+      const b = e.target.closest('.mnav-btn');
+      if (!b) return;
+      if (b.id === 'mnav-drawer') {
+        document.body.classList.toggle('m-drawer-open');
+        return;
+      }
+      const t = document.getElementById(b.dataset.target);
+      if (t) { t.click(); closeDrawer(); }
+    });
+    mmask.addEventListener('click', closeDrawer);
+  })();
 
   // ---------- 启动 ----------
   function showLogin() {

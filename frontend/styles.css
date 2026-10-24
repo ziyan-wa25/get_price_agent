@@ -504,3 +504,50 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .recv-table .col-num { width: 92px; }
 .recv-table .col-op { width: 92px; }
 .recv-table td { word-break: break-word; }
+
+/* ================= 手机自适应（≤768px）：底部导航 + 侧栏抽屉（桌面端完全不受影响） ================= */
+.mobile-nav, .mobile-mask { display: none; }
+
+@media (max-width: 768px) {
+  /* 侧栏 → 滑出抽屉（历史/进项/收藏夹/账号管理/退出 全在里面，零功能丢失） */
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 90;
+    width: min(78vw, 300px);
+    transform: translateX(-102%); transition: transform .22s ease;
+    box-shadow: 0 0 24px rgba(0,0,0,.35);
+  }
+  body.m-drawer-open .sidebar { transform: none; }
+  .mobile-mask { display: block; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 80; background: rgba(0,0,0,.42); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  body.m-drawer-open .mobile-mask { opacity: 1; pointer-events: auto; }
+
+  /* 底部导航 */
+  .mobile-nav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 85;
+    height: calc(58px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: #fff; border-top: 1px solid #e5e8f0;
+  }
+  .mnav-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    border: none; background: none; font-size: 19px; line-height: 1; color: #555; padding: 0;
+  }
+  .mnav-btn span { font-size: 11px; }
+  .mnav-btn:active { color: #4d6bfe; }
+
+  /* 主区给底部导航让位 */
+  .chat-main { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
+  .messages { padding: 12px 0 8px; }
+  .msg { margin: 0 10px 18px; }
+
+  /* 数据页：搜索框弹性 + 表格横向滑动 */
+  .price-search { flex: 1 1 160px; width: auto; font-size: 16px; }
+  .price-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .price-content table { min-width: 620px; }
+
+  /* 触控与输入规格（16px 防 iOS 聚焦缩放） */
+  .input-bar textarea { font-size: 16px; min-height: 42px; }
+  .login-card input, .login-card button { font-size: 16px; }
+  .login-card { width: min(92vw, 360px); }
+  .modal-box { width: min(96vw, 560px); max-height: 88vh; }
+  .modal-box.modal-wide { width: 96vw; }
+}
