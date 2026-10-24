@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-28（PWA/进项统计导入全覆盖/最近导入/搜索/参考者岗位）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-29（桌面版诊断/Tauri）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -54,7 +54,8 @@
     try {
       res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }); // 禁用 HTTP 缓存：换账号后绝不允许命中上一任用户的响应
     } catch (e) {
-      throw new Error('网络错误：无法连接后端服务');
+      // 网络层失败：把实际尝试连接的地址一并报出来，便于区分“配置没加载”和“网络/CORS 问题”
+      throw new Error('网络错误：无法连接后端服务 ｜ 尝试连接: ' + (API || '（空）— config.js 未加载'));
     }
     let data = {};
     try { data = await res.json(); } catch (e) { /* ignore */ }
