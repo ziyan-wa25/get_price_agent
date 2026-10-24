@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>鑫潮海办公系统</title>
+  <meta name="theme-color" content="#4d6bfe">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+  <!-- 登录 -->
+  <div id="login-view" class="login-wrap hidden">
+    <div class="login-card">
+      <div class="login-logo">🛠️</div>
+      <h1>鑫潮海办公系统</h1>
+      <p class="login-sub">浪潮服务器智能办公</p>
+      <input id="login-user" autocomplete="username" placeholder="账号">
+      <input id="login-pass" type="password" autocomplete="current-password" placeholder="密码">
+      <button id="login-btn">登 录</button>
+      <div id="login-err" class="err"></div>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="app-view" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-title">🛠️ 鑫潮海办公系统</div>
+      <button id="new-chat" class="new-chat-btn">＋ 新建报价</button>
+      <button id="btn-prices" class="side-btn price-entry">📋 配件价格表</button>
+      <button id="btn-stock" class="side-btn">📦 库存表</button>
+      <button id="btn-recv" class="side-btn">🧾 应收明细</button>
+      <button id="btn-inv" class="side-btn">📊 发票进项统计</button>
+      <button id="btn-fav" class="side-btn">🔖 网页收藏夹</button>
+      <div class="side-label">历史报价</div>
+      <div id="history-list" class="history-list"></div>
+      <div class="side-footer">
+        <div id="whoami" class="whoami"></div>
+        <button id="btn-change-pass" class="side-btn">修改密码</button>
+        <button id="btn-admin" class="side-btn hidden">账号管理</button>
+        <button id="btn-logout" class="side-btn">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="chat-main">
+      <!-- 对话页 -->
+      <div id="chat-page" class="chat-page">
+        <div id="messages" class="messages"></div>
+        <div class="input-bar">
+          <textarea id="input" rows="1" placeholder="输入需求，Enter 发送 / Shift+Enter 换行&#10;"></textarea>
+          <button id="send">发送</button>
+        </div>
+      </div>
+      <!-- 配件价格表页 -->
+      <div id="price-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="price-tabs" class="price-tabs"></div>
+          <input id="price-search" class="price-search" placeholder="搜索：型号 / 容量 / 接口 等关键词">
+        </div>
+        <div id="price-content" class="price-content"></div>
+      </div>
+      <!-- 库存表页（与报价无关） -->
+      <div id="stock-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="stock-info" class="stock-info"></div>
+          <input id="stock-search" class="price-search" placeholder="搜索货品名称">
+        </div>
+        <div id="stock-content" class="price-content"></div>
+      </div>
+      <!-- 应收明细页（每人只看自己经手的数据） -->
+      <div id="recv-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="recv-info" class="stock-info"></div>
+          <div id="recv-filter" class="recv-filter"></div>
+        </div>
+        <div id="recv-content" class="price-content"></div>
+      </div>
+      <!-- 发票进项统计页（admin/库存上传员导入，所有登录用户可见，无导出） -->
+      <div id="inv-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="inv-info" class="stock-info"></div>
+          <input id="inv-search" class="price-search" placeholder="搜索货物名称/型号">
+        </div>
+        <div id="inv-content" class="price-content"></div>
+      </div>
+      <!-- 网页收藏夹页（admin 可管理，所有人可见可点击） -->
+      <div id="fav-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="fav-info" class="stock-info"></div>
+        </div>
+        <div id="fav-content" class="price-content"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 弹窗 -->
+  <div id="modal-mask" class="modal-mask hidden">
+    <div class="modal-box" id="modal-box">
+      <div class="modal-head">
+        <span id="modal-title"></span>
+        <button id="modal-close">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // PWA：注册 Service Worker（仅 https 或 localhost 生效；用 file:// 本地打开时自动跳过，不影响任何现有功能）
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+    }
+  </script>
+</body>
+
+</html>
