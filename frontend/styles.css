@@ -588,6 +588,7 @@ html.tauri-app { zoom: 0.9; }
 
   /* 应收明细 → 卡片式：交易数量/交易单价/应收增加 一行，其余各一行，经手人加粗紧贴 */
   #recv-page .stock-import-time { display: none; } /* 手机端省空间：不显示最近一次导入时间 */
+  #stock-page .stock-import-time { display: none; } /* 库存表手机端同样隐藏：最近一次导入/最后一次修改售价 */
   #recv-content { overflow-x: hidden; }
   #recv-page .recv-table { min-width: 100%; }
   #recv-page .recv-table thead { display: none; }
@@ -610,10 +611,13 @@ html.tauri-app { zoom: 0.9; }
     margin-left: auto; text-align: right; font-weight: 600; font-size: 14px; overflow-wrap: anywhere;
   }
   #recv-page .recv-table td.col-check { display: none; } /* 手机端无导出，勾选框隐藏 */
-  /* 交易数量/交易单价/应收增加 同一行 */
+  /* 交易数量/交易单价/应收增加 同一行；数字紧跟在本列标签右侧（往左收），与下一列字样保持距离 */
   #recv-page .recv-table td.col-qty-r,
   #recv-page .recv-table td.col-price-r,
   #recv-page .recv-table td.col-amount-r { width: 33.33%; }
+  #recv-page .recv-table td.col-qty-r .cell-v,
+  #recv-page .recv-table td.col-price-r .cell-v,
+  #recv-page .recv-table td.col-amount-r .cell-v { margin-left: 8px; text-align: left; }
   /* 经手人：库存量式加粗紧贴 */
   #recv-page .recv-table td.col-handler { justify-content: flex-start; gap: 8px; border-bottom: none; }
   #recv-page .recv-table td.col-handler .cell-v { margin-left: 0; font-weight: 700; font-size: 16px; color: #1f2328; }
