@@ -559,25 +559,28 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
     padding: 10px 12px; margin-bottom: 10px;
   }
   #stock-content .stock-table td {
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
-    border-bottom: 1px dashed #f0f1f3; padding: 6px 0; text-align: left; width: auto;
-    min-width: 0;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    border-bottom: 1px dashed #f0f1f3; padding: 4px 0; text-align: left; width: auto;
+    min-width: 0; white-space: normal; /* 覆盖 td.num 的 nowrap：数值必须能收缩进一屏 */
+  }
+  #stock-content .stock-table td .cell-v {
+    margin-left: auto; text-align: right; font-weight: 600; font-size: 14px;
+    overflow-wrap: anywhere;
   }
   #stock-content .stock-table td:last-child { border-bottom: none; }
   #stock-content .stock-table td::before {
     content: attr(data-label); color: #8a8a8a; font-size: 12px;
-    flex-shrink: 0; padding-top: 2px;
+    flex-shrink: 0; padding-top: 1px;
   }
   #stock-content .stock-table td.col-name-t {
-    font-weight: 600; font-size: 15px; color: #1f2328;
-    border-bottom: 1px solid #eef0f2; padding-bottom: 8px;
+    display: block; font-weight: 600; font-size: 15px; color: #1f2328;
+    border-bottom: 1px solid #eef0f2; padding-bottom: 7px; margin-bottom: 2px;
   }
   #stock-content .stock-table td.col-name-t::before { display: none; } /* 名字行不重复标签 */
+  #stock-content .stock-table td.col-name-t .cell-v { display: inline; margin: 0; }
   /* 库存量：数字紧贴标签右侧显示，加粗醒目 */
-  #stock-content .stock-table td.col-qty {
-    justify-content: flex-start; gap: 8px;
-    font-weight: 700; font-size: 16px; color: #1f2328;
-  }
+  #stock-content .stock-table td.col-qty { justify-content: flex-start; gap: 8px; }
+  #stock-content .stock-table td.col-qty .cell-v { margin-left: 0; font-weight: 700; font-size: 16px; color: #1f2328; }
   #stock-content .stock-table td.col-qty::before { padding-top: 3px; }
   #stock-content .stock-table tr.stock-row-zero td { color: #c0392b; } /* 0 库存卡片仍标红 */
 

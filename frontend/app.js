@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-34（手机三轮：全屏左滑退抽屉/卡片一屏/隐藏新增配件/导航去价格表）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-35（卡片数值收缩修复/缓存击穿/价格页管理钮手机隐藏）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1258,8 +1258,9 @@
       tr.appendChild(tdSel);
     }
     const addLabeled = (cls, text, label) => {
-      const td = el('td', cls, text);
+      const td = el('td', cls);
       td.dataset.label = label; // 手机卡片模式显示字段名（桌面表格不受影响）
+      td.appendChild(el('span', 'cell-v', text)); // 数值包一层：手机端可靠收缩对齐
       tr.appendChild(td);
     };
     addLabeled('col-name-t', it.name || '', '货品名称');
@@ -2787,10 +2788,12 @@
       const toolbar = el('div', 'price-toolbar');
       if (!priceBatch) {
         const addBtn = el('button', 'btn-edit ok', '+ 新增配件');
+        addBtn.classList.add('desk-only'); // 手机端隐藏：新增配件是桌面管理操作
         addBtn.onclick = () => openItemModal(null, null, true);
         toolbar.appendChild(addBtn);
         toolbar.appendChild(document.createTextNode(' '));
         const batchBtn = el('button', 'btn-edit', '批量编辑');
+        batchBtn.classList.add('desk-only'); // 手机端隐藏
         batchBtn.title = '直接在表格里一次改多个配件的名称和价格，也可勾选删除';
         batchBtn.onclick = () => { priceBatch = { edits: {}, deletions: new Set() }; renderPriceTable(); };
         toolbar.appendChild(batchBtn);
