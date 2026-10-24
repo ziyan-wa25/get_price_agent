@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-31（手机底部导航/抽屉布局）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-32（手机布局二轮：更多居右/滑退抽屉/库存卡片/隐藏管理操作）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1136,28 +1136,36 @@
         bAdd.onclick = openStockItemModal;
         bar.appendChild(bAdd);
         const bEdit = el('button', 'primary', '✏️ 批量修改');
+        bEdit.classList.add('desk-only'); // 手机端隐藏：批量修改是桌面管理操作
         bEdit.onclick = enterStockBatchEdit;
         bar.appendChild(bEdit);
-        bar.appendChild(el('span', 'stock-hint', '「批量修改」：改格子 + 勾选标记删除，一次保存'));
+        const bEditHint = el('span', 'stock-hint', '「批量修改」：改格子 + 勾选标记删除，一次保存');
+        bEditHint.classList.add('desk-only');
+        bar.appendChild(bEditHint);
       }
       if (!stockData.canEdit && me && me.role === 'exporter') {
         const bWh = el('button', 'primary', '✏️ 修改库房备注');
+        bWh.classList.add('desk-only'); // 手机端隐藏
         bWh.onclick = enterStockWhEdit;
         bar.appendChild(bWh);
       }
       if (stockData.canImport) {
         const bImport = el('button', '', '⇪ 导入 Excel');
+        bImport.classList.add('desk-only'); // 手机端隐藏
         bImport.onclick = () => $('#stock-file').click();
         bar.appendChild(bImport);
       }
       if (stockData.canExport) {
         const bExport = el('button', '', '⇩ 导出 Excel');
+        bExport.classList.add('desk-only'); // 手机端隐藏
         bExport.onclick = exportStockExcel;
         bar.appendChild(bExport);
       }
       if (!stockData.canEdit && (stockData.canImport || stockData.canExport)) {
         const perms = [stockData.canImport ? '导入' : '', stockData.canExport ? '导出' : ''].filter(Boolean).join('/');
-        bar.appendChild(el('span', 'stock-hint', '你只有' + perms + '权限，编辑请联系管理员'));
+        const permHint = el('span', 'stock-hint', '你只有' + perms + '权限，编辑请联系管理员');
+        permHint.classList.add('desk-only');
+        bar.appendChild(permHint);
       }
     }
     if (bar.children.length) box.appendChild(bar);
@@ -1239,12 +1247,17 @@
       tdSel.appendChild(cb);
       tr.appendChild(tdSel);
     }
-    tr.appendChild(el('td', 'col-name-t', it.name || ''));
-    tr.appendChild(el('td', 'num col-qty', fmtQty(it.qty)));
-    if (stockData.canSeeCost) tr.appendChild(el('td', 'num', fmtCost(it.cost)));
-    if (stockData.canSeePrice) tr.appendChild(el('td', 'num', fmtSale(it.price)));
-    tr.appendChild(el('td', 'stock-note', it.note || ''));
-    tr.appendChild(el('td', 'stock-note stock-wh', it.wh || '')); // 备注（库房）：所有人可见
+    const addLabeled = (cls, text, label) => {
+      const td = el('td', cls, text);
+      td.dataset.label = label; // 手机卡片模式显示字段名（桌面表格不受影响）
+      tr.appendChild(td);
+    };
+    addLabeled('col-name-t', it.name || '', '货品名称');
+    addLabeled('num col-qty', fmtQty(it.qty), '库存量');
+    if (stockData.canSeeCost) addLabeled('num', fmtCost(it.cost), '成本价');
+    if (stockData.canSeePrice) addLabeled('num', fmtSale(it.price), '售价');
+    addLabeled('stock-note', it.note || '', '备注');
+    addLabeled('stock-note stock-wh', it.wh || '', '备注（库房）'); // 所有人可见
     return tr;
   }
 
@@ -1548,11 +1561,13 @@
     const bar = el('div', 'stock-toolbar');
     if (recvData.canImport) {
       const bImport = el('button', '', '⇪ 导入 Excel');
+      bImport.classList.add('desk-only'); // 手机端隐藏
       bImport.onclick = () => $('#recv-file').click();
       bar.appendChild(bImport);
     }
     // 检索框焦点/光标已在函数开头捕获（清空重建前）
     const bExport = el('button', 'primary', '⇩ 导出 Excel' + (recvSel.size ? '（已选 ' + recvSel.size + '）' : ''));
+    bExport.classList.add('desk-only'); // 手机端隐藏
     bExport.onclick = exportRecvExcel;
     bar.appendChild(bExport);
     // 往来客户检索：过滤表格显示与导出范围（配合全选，快速导出某客户的明细）
@@ -2085,9 +2100,12 @@
     const bar = el('div', 'stock-toolbar');
     if (d.canImport) {
       const bImport = el('button', '', '⇪ 导入 Excel');
+      bImport.classList.add('desk-only'); // 手机端隐藏
       bImport.onclick = () => $('#inv-file').click();
       bar.appendChild(bImport);
-      bar.appendChild(el('span', 'stock-hint', '导入规则：每次上传一个新表即完全覆盖原数据；三组并排的进项表自动摊平（数量入/数量出不导入）；同键多行取第一行'));
+      const invHint = el('span', 'stock-hint', '导入规则：每次上传一个新表即完全覆盖原数据；三组并排的进项表自动摊平（数量入/数量出不导入）；同键多行取第一行');
+      invHint.classList.add('desk-only');
+      bar.appendChild(invHint);
     }
     if (bar.children.length) box.appendChild(bar);
     if (d.canImport && !$('#inv-file')) {
@@ -3276,7 +3294,7 @@
     renderPriceTable();
   });
 
-  // ---------- 手机底部导航（≤768px 显示；点击转发到侧栏对应按钮，逻辑零重复） ----------
+  // ---------- 手机适配（≤768px 生效；桌面端不受影响） ----------
   (function () {
     const mnav = $('#mobile-nav');
     const mmask = $('#mobile-mask');
@@ -3293,6 +3311,42 @@
       if (t) { t.click(); closeDrawer(); }
     });
     mmask.addEventListener('click', closeDrawer);
+
+    // 抽屉手势：向左滑动退出（跟手拖动，松手超过阈值即关）
+    const sidebar = document.querySelector('.sidebar');
+    let sx = 0, sdx = 0, dragging = false;
+    if (sidebar) {
+      sidebar.addEventListener('touchstart', (e) => {
+        if (!document.body.classList.contains('m-drawer-open')) return;
+        sx = e.touches[0].clientX; sdx = 0; dragging = true;
+        sidebar.style.transition = 'none';
+      }, { passive: true });
+      sidebar.addEventListener('touchmove', (e) => {
+        if (!dragging) return;
+        sdx = e.touches[0].clientX - sx;
+        if (sdx < 0) sidebar.style.transform = 'translateX(' + sdx + 'px)';
+      }, { passive: true });
+      const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        sidebar.style.transition = '';
+        sidebar.style.transform = '';
+        if (sdx < -50) closeDrawer();
+      };
+      sidebar.addEventListener('touchend', endDrag);
+      sidebar.addEventListener('touchcancel', endDrag);
+    }
+
+    // 报价输入框：手机端去掉桌面快捷键提示字样
+    const DESK_PH = '输入需求，Enter 发送 / Shift+Enter 换行\n';
+    const applyMobilePh = () => {
+      const i = $('#input');
+      if (i) i.placeholder = (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) ? '' : DESK_PH;
+    };
+    applyMobilePh();
+    if (window.matchMedia) {
+      try { window.matchMedia('(max-width: 768px)').addEventListener('change', applyMobilePh); } catch (e) { /* 老浏览器忽略 */ }
+    }
   })();
 
   // ---------- 启动 ----------
