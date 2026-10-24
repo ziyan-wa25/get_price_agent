@@ -8,6 +8,7 @@ window.APP_CONFIG = (function () {
   // 自定义协议 URL 因平台而异：Windows/Android 为 http(s)://api.localhost（随 useHttpsScheme），macOS/Linux 为 api://localhost
   var isTauri = !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
   if (isTauri) {
+    document.documentElement.classList.add('tauri-app'); // 桌面端整体缩放 0.9，与网页视觉比例一致
     var isWinLike = /Windows|Android/i.test(navigator.userAgent);
     return { API_BASE: isWinLike ? 'https://api.localhost' : 'api://localhost' };
   }

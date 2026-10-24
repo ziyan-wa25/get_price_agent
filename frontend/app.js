@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-35（卡片数值收缩修复/缓存击穿/价格页管理钮手机隐藏）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-36（桌面缩放0.9/应收手机卡片）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1671,15 +1671,20 @@
       };
       tdSel.appendChild(cb);
       tr.appendChild(tdSel);
-      tr.appendChild(el('td', 'col-date-t', r.date || ''));
-      tr.appendChild(el('td', '', r.client || ''));
-      tr.appendChild(el('td', '', r.item || ''));
-      tr.appendChild(el('td', 'num', fmtAmount(r.qty)));
-      tr.appendChild(el('td', 'num', fmtAmount(r.price)));
-      tr.appendChild(el('td', 'num', fmtAmount(r.amount)));
-      const noteTd = el('td', 'stock-note', r.note || '');
-      tr.appendChild(noteTd);
-      tr.appendChild(el('td', 'num', r.handler || ''));
+      const addCell = (cls, text, label) => {
+        const td = el('td', cls);
+        td.dataset.label = label; // 手机卡片模式显示字段名（桌面表格不受影响）
+        td.appendChild(el('span', 'cell-v', text)); // 数值包一层：手机端可靠收缩对齐
+        tr.appendChild(td);
+      };
+      addCell('col-date-t', r.date || '', '日期');
+      addCell('', r.client || '', '往来客户');
+      addCell('', r.item || '', '货品名称');
+      addCell('num col-qty-r', fmtAmount(r.qty), '交易数量');
+      addCell('num col-price-r', fmtAmount(r.price), '交易单价');
+      addCell('num col-amount-r', fmtAmount(r.amount), '应收增加');
+      addCell('stock-note', r.note || '', '附加说明');
+      addCell('num col-handler', r.handler || '', '经手人');
       tbody.appendChild(tr);
     });
     if (!rows.length) {
