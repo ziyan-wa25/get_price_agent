@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-40（手机：回退卡片为带框版v38样式）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-41（去提示字样/工具栏按钮统一蓝色）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1118,7 +1118,6 @@
     const bar = el('div', 'stock-toolbar');
     if (stockData.canEdit && stockBatchMode === 'edit') {
       bar.classList.add('sticky'); // 悬浮：向下滚动时保存按钮仍可点击
-      bar.appendChild(el('span', 'stock-hint', '直接修改格子；勾选行=标记删除（红色显示），点「保存全部修改」一次提交'));
       const nChg = stockChangedRows().length;
       const nDel = stockDelSel.size;
       const bSave = el('button', 'primary', '💾 保存全部修改' + (nDel ? '（改 ' + nChg + ' / 删 ' + nDel + '）' : '（' + nChg + '）'));
@@ -1131,7 +1130,6 @@
     } else if (!stockData.canEdit && me && me.role === 'exporter' && stockBatchMode === 'wh') {
       // 库存导出员专用：只能修改「备注（库房）」列
       bar.classList.add('sticky');
-      bar.appendChild(el('span', 'stock-hint', '你只能修改「备注（库房）」列，其他内容不可修改；改完点「保存库房备注」一次提交'));
       const n = stockChangedWh().length;
       const bSave = el('button', 'primary', '💾 保存库房备注（' + n + '）');
       bSave.onclick = saveStockWhEdit;
@@ -1141,7 +1139,7 @@
       bar.appendChild(bCancel);
     } else {
       if (stockData.canEdit) {
-        const bAdd = el('button', '', '＋ 新增配件');
+        const bAdd = el('button', 'primary', '＋ 新增配件');
         bAdd.classList.add('desk-only'); // 手机端隐藏：新增配件是桌面管理操作
         bAdd.onclick = openStockItemModal;
         bar.appendChild(bAdd);
@@ -1149,9 +1147,6 @@
         bEdit.classList.add('desk-only'); // 手机端隐藏：批量修改是桌面管理操作
         bEdit.onclick = enterStockBatchEdit;
         bar.appendChild(bEdit);
-        const bEditHint = el('span', 'stock-hint', '「批量修改」：改格子 + 勾选标记删除，一次保存');
-        bEditHint.classList.add('desk-only');
-        bar.appendChild(bEditHint);
       }
       if (!stockData.canEdit && me && me.role === 'exporter') {
         const bWh = el('button', 'primary', '✏️ 修改库房备注');
@@ -1160,22 +1155,16 @@
         bar.appendChild(bWh);
       }
       if (stockData.canImport) {
-        const bImport = el('button', '', '⇪ 导入 Excel');
+        const bImport = el('button', 'primary', '⇪ 导入 Excel');
         bImport.classList.add('desk-only'); // 手机端隐藏
         bImport.onclick = () => $('#stock-file').click();
         bar.appendChild(bImport);
       }
       if (stockData.canExport) {
-        const bExport = el('button', '', '⇩ 导出 Excel');
+        const bExport = el('button', 'primary', '⇩ 导出 Excel');
         bExport.classList.add('desk-only'); // 手机端隐藏
         bExport.onclick = exportStockExcel;
         bar.appendChild(bExport);
-      }
-      if (!stockData.canEdit && (stockData.canImport || stockData.canExport)) {
-        const perms = [stockData.canImport ? '导入' : '', stockData.canExport ? '导出' : ''].filter(Boolean).join('/');
-        const permHint = el('span', 'stock-hint', '你只有' + perms + '权限，编辑请联系管理员');
-        permHint.classList.add('desk-only');
-        bar.appendChild(permHint);
       }
     }
     if (bar.children.length) box.appendChild(bar);
@@ -1571,7 +1560,7 @@
 
     const bar = el('div', 'stock-toolbar');
     if (recvData.canImport) {
-      const bImport = el('button', '', '⇪ 导入 Excel');
+      const bImport = el('button', 'primary', '⇪ 导入 Excel');
       bImport.classList.add('desk-only'); // 手机端隐藏
       bImport.onclick = () => $('#recv-file').click();
       bar.appendChild(bImport);
@@ -1604,9 +1593,6 @@
     };
     searchWrap.appendChild(inClient);
     bar.appendChild(searchWrap);
-    bar.appendChild(el('span', 'stock-hint', recvData.isAdmin
-      ? '你看到全部明细' + (recvFilter ? '（经手人：' + recvFilter + '）' : '') + (recvClientFilter ? '（客户含「' + recvClientFilter + '」）' : '') + '；勾选=只导勾选；点击行可修改该条内容（重新导入会被覆盖）'
-      : '你只看到自己经手的明细；勾选行后只导出勾选的行，不勾选=全部导出'));
     box.appendChild(bar);
     // 恢复检索框焦点与光标（修复“输入一个字母就卡住”）
     if (searchHadFocus) {
@@ -1875,12 +1861,9 @@
       const bAdd = el('button', 'primary', '＋ 新增收藏');
       bAdd.onclick = openFavAddModal;
       bar.appendChild(bAdd);
-      bar.appendChild(el('span', 'stock-hint', '新增后所有人都能看到；点击名称或网址会在新标签页打开'));
-    } else {
-      bar.appendChild(el('span', 'stock-hint', '点击名称或网址即可在新标签页打开（内容由管理员维护）'));
     }
     box.innerHTML = '';
-    box.appendChild(bar);
+    if (bar.children.length) box.appendChild(bar);
     const items = d.items || [];
     if (!items.length) {
       box.appendChild(el('div', 'modal-hint', d.canManage ? '还没有收藏的网页：点「＋ 新增收藏」添加第一个' : '管理员还没有添加收藏网页'));
@@ -2115,13 +2098,10 @@
     info.appendChild(el('span', 'stock-import-time', '🕐 最近一次导入：' + it));
     const bar = el('div', 'stock-toolbar');
     if (d.canImport) {
-      const bImport = el('button', '', '⇪ 导入 Excel');
+      const bImport = el('button', 'primary', '⇪ 导入 Excel');
       bImport.classList.add('desk-only'); // 手机端隐藏
       bImport.onclick = () => $('#inv-file').click();
       bar.appendChild(bImport);
-      const invHint = el('span', 'stock-hint', '导入规则：每次上传一个新表即完全覆盖原数据；三组并排的进项表自动摊平（数量入/数量出不导入）；同键多行取第一行');
-      invHint.classList.add('desk-only');
-      bar.appendChild(invHint);
     }
     if (bar.children.length) box.appendChild(bar);
     if (d.canImport && !$('#inv-file')) {
