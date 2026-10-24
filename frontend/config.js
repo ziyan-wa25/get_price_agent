@@ -4,9 +4,13 @@
 // 云函数地址变更时，只改下面 CLOUD_API_BASE 一处即可。
 window.APP_CONFIG = (function () {
   var CLOUD_API_BASE = 'https://1483863126-5a9fgz6c3g.ap-beijing.tencentscf.com';
-  // 桌面版（Tauri）：请求走应用内置转发（api:// 协议，Rust 直连云端），无 CORS 限制
+  // 桌面版（Tauri）：请求走应用内置转发（Rust 直连云端），无 CORS 限制。
+  // 自定义协议 URL 因平台而异：Windows/Android 为 http(s)://api.localhost（随 useHttpsScheme），macOS/Linux 为 api://localhost
   var isTauri = !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
-  if (isTauri) return { API_BASE: 'api://localhost' };
+  if (isTauri) {
+    var isWinLike = /Windows|Android/i.test(navigator.userAgent);
+    return { API_BASE: isWinLike ? 'https://api.localhost' : 'api://localhost' };
+  }
   var isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   return {
     API_BASE: isLocal ? 'http://127.0.0.1:8787' : CLOUD_API_BASE,

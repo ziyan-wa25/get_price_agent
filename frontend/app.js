@@ -2,8 +2,8 @@
 (function () {
   'use strict';
 
-  const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-32（手机布局二轮：更多居右/滑退抽屉/库存卡片/隐藏管理操作）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
+  console.log('[报价系统] app.js build v20260619-34（手机三轮：全屏左滑退抽屉/卡片一屏/隐藏新增配件/导航去价格表）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -50,12 +50,21 @@
     const headers = { 'Content-Type': 'application/json' };
     const t = impToken || token; // 模拟登录标签页用被模拟者的身份
     if (t) headers['Authorization'] = 'Bearer ' + t;
+    const opts = { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }; // 禁用 HTTP 缓存：换账号后绝不允许命中上一任用户的响应
     let res;
     try {
-      res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }); // 禁用 HTTP 缓存：换账号后绝不允许命中上一任用户的响应
+      res = await fetch(API + path, opts);
     } catch (e) {
-      // 网络层失败：把实际尝试连接的地址一并报出来，便于区分“配置没加载”和“网络/CORS 问题”
-      throw new Error('网络错误：无法连接后端服务 ｜ 尝试连接: ' + (API || '（空）— config.js 未加载'));
+      // Tauri 自定义协议在 Windows 上存在 https://api.localhost / http://api.localhost 两种形态：
+      // 首选失败时自动换用另一种并记住（后续请求直接走可用形态）
+      const alt = API === 'https://api.localhost' ? 'http://api.localhost' : (API === 'http://api.localhost' ? 'https://api.localhost' : '');
+      if (!alt) throw new Error('网络错误：无法连接后端服务 ｜ 尝试连接: ' + (API || '（空）— config.js 未加载'));
+      try {
+        res = await fetch(alt + path, opts);
+        API = alt;
+      } catch (e2) {
+        throw new Error('网络错误：无法连接后端服务 ｜ 已尝试 ' + API + ' 和 ' + alt);
+      }
     }
     let data = {};
     try { data = await res.json(); } catch (e) { /* ignore */ }
@@ -1133,6 +1142,7 @@
     } else {
       if (stockData.canEdit) {
         const bAdd = el('button', '', '＋ 新增配件');
+        bAdd.classList.add('desk-only'); // 手机端隐藏：新增配件是桌面管理操作
         bAdd.onclick = openStockItemModal;
         bar.appendChild(bAdd);
         const bEdit = el('button', 'primary', '✏️ 批量修改');
@@ -3312,30 +3322,40 @@
     });
     mmask.addEventListener('click', closeDrawer);
 
-    // 抽屉手势：向左滑动退出（跟手拖动，松手超过阈值即关）
+    // 抽屉手势：抽屉打开时，在屏幕任意区域向左滑动即退出（上下滑动仍正常滚动）
     const sidebar = document.querySelector('.sidebar');
-    let sx = 0, sdx = 0, dragging = false;
-    if (sidebar) {
-      sidebar.addEventListener('touchstart', (e) => {
-        if (!document.body.classList.contains('m-drawer-open')) return;
-        sx = e.touches[0].clientX; sdx = 0; dragging = true;
-        sidebar.style.transition = 'none';
-      }, { passive: true });
-      sidebar.addEventListener('touchmove', (e) => {
-        if (!dragging) return;
-        sdx = e.touches[0].clientX - sx;
-        if (sdx < 0) sidebar.style.transform = 'translateX(' + sdx + 'px)';
-      }, { passive: true });
-      const endDrag = () => {
-        if (!dragging) return;
-        dragging = false;
-        sidebar.style.transition = '';
-        sidebar.style.transform = '';
-        if (sdx < -50) closeDrawer();
-      };
-      sidebar.addEventListener('touchend', endDrag);
-      sidebar.addEventListener('touchcancel', endDrag);
-    }
+    let sx = 0, sy = 0, sdx = 0, dragging = false, horiz = null;
+    const gestStart = (e) => {
+      if (!document.body.classList.contains('m-drawer-open')) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      sdx = 0; horiz = null; dragging = true;
+      sidebar.style.transition = 'none';
+    };
+    const gestMove = (e) => {
+      if (!dragging) return;
+      const dx = e.touches[0].clientX - sx;
+      const dy = e.touches[0].clientY - sy;
+      if (horiz === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) horiz = Math.abs(dx) > Math.abs(dy);
+      if (horiz !== true) return; // 纵向手势让位给列表滚动
+      if (dx < 0) {
+        if (e.cancelable) e.preventDefault(); // 阻止浏览器把这个手势当滚动/后退处理
+        sdx = dx;
+        sidebar.style.transform = 'translateX(' + dx + 'px)';
+      }
+    };
+    const gestEnd = () => {
+      if (!dragging) return;
+      dragging = false;
+      sidebar.style.transition = '';
+      sidebar.style.transform = '';
+      if (sdx < -45) closeDrawer();
+      sdx = 0;
+    };
+    // 全区域：直接挂在 document 上，抽屉/遮罩/内容区任意位置左滑都生效
+    document.addEventListener('touchstart', gestStart, { passive: true });
+    document.addEventListener('touchmove', gestMove, { passive: false });
+    document.addEventListener('touchend', gestEnd);
+    document.addEventListener('touchcancel', gestEnd);
 
     // 报价输入框：手机端去掉桌面快捷键提示字样
     const DESK_PH = '输入需求，Enter 发送 / Shift+Enter 换行\n';

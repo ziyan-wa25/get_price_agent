@@ -548,7 +548,9 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
   /* 管理操作（导入/导出/批量修改等）不在手机端显示 */
   .desk-only { display: none !important; }
 
-  /* 库存表 → 卡片式（仅库存页；一行一个货品，字段分行） */
+  /* 库存表 → 卡片式（仅库存页；一行一个货品，字段分行；宽度必须一屏放下，不允许左右滑动） */
+  #stock-content { overflow-x: hidden; }
+  #stock-content .stock-table { min-width: 100%; }
   #stock-content .stock-table thead { display: none; }
   #stock-content .stock-table, #stock-content .stock-table tbody { display: block; }
   #stock-content .stock-table tr {
@@ -559,6 +561,7 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
   #stock-content .stock-table td {
     display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
     border-bottom: 1px dashed #f0f1f3; padding: 6px 0; text-align: left; width: auto;
+    min-width: 0;
   }
   #stock-content .stock-table td:last-child { border-bottom: none; }
   #stock-content .stock-table td::before {
@@ -570,6 +573,12 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
     border-bottom: 1px solid #eef0f2; padding-bottom: 8px;
   }
   #stock-content .stock-table td.col-name-t::before { display: none; } /* 名字行不重复标签 */
+  /* 库存量：数字紧贴标签右侧显示，加粗醒目 */
+  #stock-content .stock-table td.col-qty {
+    justify-content: flex-start; gap: 8px;
+    font-weight: 700; font-size: 16px; color: #1f2328;
+  }
+  #stock-content .stock-table td.col-qty::before { padding-top: 3px; }
   #stock-content .stock-table tr.stock-row-zero td { color: #c0392b; } /* 0 库存卡片仍标红 */
 
   /* 触控与输入规格（16px 防 iOS 聚焦缩放） */
