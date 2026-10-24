@@ -1,6 +1,0 @@
-{
-  "identifier": "default",
-  "description": "主窗口默认能力（无文件系统/Shell 等高危权限）",
-  "windows": ["main"],
-  "permissions": ["core:default"]
-}
