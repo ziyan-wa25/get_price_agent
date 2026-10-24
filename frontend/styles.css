@@ -545,7 +545,7 @@ html.tauri-app { zoom: 0.9; }
   /* 数据页：搜索框弹性 + 表格横向滑动 + 左右占满屏幕（卡片尽量贴边，把宽度留给内容） */
   .price-page { padding: 8px 4px 12px; }
   .price-search { flex: 1 1 160px; width: auto; font-size: 16px; }
-  .price-content { overflow-x: auto; -webkit-overflow-scrolling: touch; border: none; border-radius: 0; } /* 手机端去掉外层框：列表全幅贴边 */
+  .price-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .price-content table { min-width: 620px; }
 
   /* 管理操作（导入/导出/批量修改等）不在手机端显示 */
@@ -558,9 +558,8 @@ html.tauri-app { zoom: 0.9; }
   #stock-content .stock-table, #stock-content .stock-table tbody { display: block; }
   #stock-content .stock-table tr {
     display: block; background: #fff;
-    border: none; border-radius: 8px;
-    padding: 6px 2px; margin-bottom: 6px;
-    box-shadow: 0 1px 2px rgba(0,0,0,.05);
+    border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 8px 10px; margin-bottom: 8px;
   }
   #stock-content .stock-table td {
     display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
@@ -596,9 +595,8 @@ html.tauri-app { zoom: 0.9; }
   #recv-page .recv-table, #recv-page .recv-table tbody { display: block; }
   #recv-page .recv-table tr {
     display: flex; flex-wrap: wrap; background: #fff;
-    border: none; border-radius: 8px;
-    padding: 6px 2px; margin-bottom: 6px;
-    box-shadow: 0 1px 2px rgba(0,0,0,.05);
+    border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 8px 10px; margin-bottom: 8px;
   }
   #recv-page .recv-table td {
     display: flex; align-items: baseline; gap: 10px;
@@ -625,7 +623,7 @@ html.tauri-app { zoom: 0.9; }
   #recv-page .recv-table td.col-handler .cell-v { margin-left: 0; font-weight: 700; font-size: 16px; color: #1f2328; }
   #recv-page .recv-table td.col-handler::before { padding-top: 3px; }
   /* 逾期行在卡片下仍淡红可辨 */
-  #recv-page .recv-table tr.recv-row-overdue { background: #fdf3f2; }
+  #recv-page .recv-table tr.recv-row-overdue { background: #fdf3f2; border-color: #f3c8c4; }
   #recv-page .recv-table tr.recv-row-overdue td { color: #b3423a; }
   /* 桌面固定列宽在卡片下失效 */
   #recv-page .recv-table .col-date, #recv-page .recv-table .col-client, #recv-page .recv-table .col-item,
