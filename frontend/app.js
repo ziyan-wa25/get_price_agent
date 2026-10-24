@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-37（手机：库存表隐藏时间戳/应收三列数字左收）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-38（手机：应收值居中/卡片贴边扩宽）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉

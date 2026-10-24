@@ -542,8 +542,8 @@ html.tauri-app { zoom: 0.9; }
   .messages { padding: 12px 0 8px; }
   .msg { margin: 0 10px 18px; }
 
-  /* 数据页：搜索框弹性 + 表格横向滑动 + 左右占满屏幕 */
-  .price-page { padding: 10px 8px 14px; }
+  /* 数据页：搜索框弹性 + 表格横向滑动 + 左右占满屏幕（卡片尽量贴边，把宽度留给内容） */
+  .price-page { padding: 8px 4px 12px; }
   .price-search { flex: 1 1 160px; width: auto; font-size: 16px; }
   .price-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .price-content table { min-width: 620px; }
@@ -559,7 +559,7 @@ html.tauri-app { zoom: 0.9; }
   #stock-content .stock-table tr {
     display: block; background: #fff;
     border: 1px solid #e5e7eb; border-radius: 12px;
-    padding: 10px 12px; margin-bottom: 10px;
+    padding: 8px 10px; margin-bottom: 8px;
   }
   #stock-content .stock-table td {
     display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
@@ -596,7 +596,7 @@ html.tauri-app { zoom: 0.9; }
   #recv-page .recv-table tr {
     display: flex; flex-wrap: wrap; background: #fff;
     border: 1px solid #e5e7eb; border-radius: 12px;
-    padding: 10px 12px; margin-bottom: 10px;
+    padding: 8px 10px; margin-bottom: 8px;
   }
   #recv-page .recv-table td {
     display: flex; align-items: baseline; gap: 10px;
@@ -608,7 +608,7 @@ html.tauri-app { zoom: 0.9; }
     content: attr(data-label); color: #8a8a8a; font-size: 12px; flex-shrink: 0; padding-top: 1px;
   }
   #recv-page .recv-table td .cell-v {
-    margin-left: auto; text-align: right; font-weight: 600; font-size: 14px; overflow-wrap: anywhere;
+    flex: 1; text-align: center; font-weight: 600; font-size: 14px; overflow-wrap: anywhere;
   }
   #recv-page .recv-table td.col-check { display: none; } /* 手机端无导出，勾选框隐藏 */
   /* 交易数量/交易单价/应收增加 同一行；数字紧跟在本列标签右侧（往左收），与下一列字样保持距离 */
