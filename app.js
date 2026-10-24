@@ -3,7 +3,7 @@
   'use strict';
 
   const API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-26（进项统计最近导入/搜索/参考者岗位/可见人员弹窗/拖动排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-28（PWA/进项统计导入全覆盖/最近导入/搜索/参考者岗位）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2086,7 +2086,7 @@
       const bImport = el('button', '', '⇪ 导入 Excel');
       bImport.onclick = () => $('#inv-file').click();
       bar.appendChild(bImport);
-      bar.appendChild(el('span', 'stock-hint', '导入规则：三组并排的进项表自动摊平（数量入/数量出不导入）；同键（货物名称+型号）更新；Excel 没有、表里有的行保留不清零；同键多行取第一行'));
+      bar.appendChild(el('span', 'stock-hint', '导入规则：每次上传一个新表即完全覆盖原数据；三组并排的进项表自动摊平（数量入/数量出不导入）；同键多行取第一行'));
     }
     if (bar.children.length) box.appendChild(bar);
     if (d.canImport && !$('#inv-file')) {
@@ -2139,7 +2139,7 @@
     } catch (err) { alert(err.message); return; }
     try {
       const r = await api('POST', '/api/invoices-import', { dataBase64: b64 });
-      alert('导入完成：新增 ' + r.added + ' 行，更新 ' + r.updated + ' 行，同键重复跳过 ' + (r.dupSkipped || 0) + ' 行');
+      alert('导入完成：本次导入 ' + r.total + ' 行（已完全覆盖原数据）' + (r.dupSkipped ? '，同键重复跳过 ' + r.dupSkipped + ' 行' : ''));
       loadInv();
     } catch (err) { alert('导入失败：' + err.message); }
   }
