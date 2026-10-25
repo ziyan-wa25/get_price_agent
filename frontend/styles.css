@@ -505,8 +505,8 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .recv-table .col-op { width: 92px; }
 .recv-table td { word-break: break-word; }
 
-/* 桌面应用（Tauri）整体缩放：与网页视觉比例一致（仅桌面版会挂 tauri-app 类，网页不受影响） */
-html.tauri-app { zoom: 0.8; }
+/* 桌面应用缩放改用 WebView2 原生 ZoomFactor（main.rs setup 中 set_zoom(0.8)）：
+   CSS zoom 挂根元素会破坏合成器滚动优化导致滚轮卡顿，已弃用；tauri-app 类保留备用 */
 
 /* ================= 手机自适应（≤768px）：底部导航 + 侧栏抽屉（桌面端完全不受影响） ================= */
 .mobile-nav, .mobile-mask { display: none; }
