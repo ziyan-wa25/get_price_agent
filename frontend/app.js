@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-45（侧栏两键样式统一去图标）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-46（应用收藏夹/桌面跳默认浏览器）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -198,6 +198,7 @@
     recvClientFilter = '';
     favData = null;
     favUsers = null;
+    appsData = null;
     invData = null;
     $('#fav-content').innerHTML = '';
     $('#inv-content').innerHTML = '';
@@ -1900,6 +1901,12 @@
       const tdUrl = el('td', 'fav-url-t');
       tdUrl.appendChild(aUrl);
       tr.appendChild(tdUrl);
+      // 桌面版：点击链接改为跳默认浏览器（webview 内不打开外链）
+      if (isTauriApp) {
+        const openDefault = (e) => { e.preventDefault(); openAppTarget(b.url).catch((err) => alert('打开失败：' + err)); };
+        aName.addEventListener('click', openDefault);
+        aUrl.addEventListener('click', openDefault);
+      }
       if (d.canManage) {
         const tdOp = el('td', 'col-fav-op');
         const bDel = el('button', 'fav-del', '🗑 删除');
@@ -2159,6 +2166,202 @@
     } catch (err) { alert('导入失败：' + err.message); }
   }
 
+  // ---------- 应用收藏夹（桌面版：启动本机应用/跳默认浏览器；网页版：协议链接交给系统处理） ----------
+  let appsData = null;
+  const isTauriApp = !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
+
+  function tauriInvoke(cmd, args) {
+    const internals = window.__TAURI_INTERNALS__;
+    if (internals && internals.invoke) return internals.invoke(cmd, args);
+    if (window.__TAURI__ && window.__TAURI__.invoke) return window.__TAURI__.invoke(cmd, args);
+    return Promise.reject(new Error('该操作仅桌面版支持'));
+  }
+
+  // 统一打开入口：桌面版走 Rust（浏览器/启动应用）；网页版 http(s) 新标签、协议链接交给系统
+  function openAppTarget(target) {
+    const t = String(target || '');
+    if (isTauriApp) return tauriInvoke('open_target', { target: t });
+    if (/^https?:\/\//i.test(t)) { window.open(t, '_blank', 'noopener'); return Promise.resolve(); }
+    const a = document.createElement('a'); // 协议链接（weixin:// 等）：浏览器自行处理，可能弹确认框
+    a.href = t; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => a.remove(), 2000);
+    return Promise.resolve();
+  }
+
+  async function loadApps() {
+    const box = $('#apps-content');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      appsData = await api('GET', '/api/app-favs');
+      renderAppsPage();
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
+  function appKindLabel(t) { return /\.exe$/i.test(t) ? '本机应用' : (/\.lnk$/i.test(t) ? '快捷方式' : '应用链接'); }
+
+  function renderAppsPage() {
+    const box = $('#apps-content');
+    const info = $('#apps-info');
+    info.innerHTML = '';
+    const d = appsData || { items: [], canManage: false };
+    if (d.updatedAt) {
+      info.appendChild(el('span', 'stock-import-time', '🕐 最近一次修改：' + new Date(d.updatedAt).toLocaleString('zh-CN') + (d.updatedBy ? '（' + d.updatedBy + '）' : '')));
+    }
+    const bar = el('div', 'stock-toolbar');
+    if (d.canManage) {
+      const bAdd = el('button', 'primary', '＋ 添加应用');
+      bAdd.onclick = openAppsAddModal;
+      bar.appendChild(bAdd);
+    }
+    box.innerHTML = '';
+    if (bar.children.length) box.appendChild(bar);
+    const kw = (($('#apps-search') && $('#apps-search').value) || '').trim().toLowerCase();
+    const items = (d.items || []).filter((a) => !kw || (a.name || '').toLowerCase().includes(kw) || (a.target || '').toLowerCase().includes(kw));
+    if (!items.length) {
+      box.appendChild(el('div', 'modal-hint', d.canManage ? (kw ? '没有匹配的应用' : '还没有应用：点「＋ 添加应用」添加第一个（如微信、网易邮箱大师）') : (kw ? '没有匹配的应用' : '管理员还没有添加应用')));
+      return;
+    }
+    const tbl = el('table', 'stock-table apps-table');
+    const trh = el('tr');
+    trh.appendChild(el('th', 'col-apps-name', '名称'));
+    trh.appendChild(el('th', 'col-apps-kind', '类型'));
+    trh.appendChild(el('th', '', '目标'));
+    if (d.canManage) {
+      trh.appendChild(el('th', 'col-fav-op', '操作'));
+      trh.appendChild(el('th', 'col-fav-handle', '')); // 拖动排序把手
+    }
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    let dragId = null;
+    items.forEach((b) => {
+      const tr = el('tr');
+      const webOnly = !isTauriApp && /\.exe$|\.lnk$/i.test(b.target); // 本机路径条目在网页版无法启动
+      const tdName = el('td', 'col-apps-name-t');
+      tdName.dataset.label = '名称';
+      const aName = el('a', 'fav-link', b.name);
+      aName.href = 'javascript:void(0)';
+      aName.onclick = (e) => {
+        e.preventDefault();
+        if (webOnly) { alert('「' + b.name + '」是本机应用，请在桌面版应用里点击启动'); return; }
+        openAppTarget(b.target).catch((err) => alert('启动失败：' + err));
+      };
+      tdName.appendChild(aName);
+      tr.appendChild(tdName);
+      const tdKind = el('td', 'col-apps-kind-t');
+      tdKind.dataset.label = '类型';
+      tdKind.appendChild(el('span', 'app-kind-badge' + (/\.exe$|\.lnk$/i.test(b.target) ? ' app-kind-exe' : ''), appKindLabel(b.target) + (webOnly ? '（仅桌面）' : '')));
+      tr.appendChild(tdKind);
+      const tdTarget = el('td', 'col-apps-target');
+      tdTarget.dataset.label = '目标';
+      tdTarget.textContent = b.target;
+      tdTarget.title = b.target;
+      tr.appendChild(tdTarget);
+      if (d.canManage) {
+        const tdOp = el('td', 'col-fav-op');
+        const bDel = el('button', 'fav-del', '🗑 删除');
+        bDel.onclick = async () => {
+          if (!confirm('删除应用「' + b.name + '」？')) return;
+          try {
+            await api('POST', '/api/app-favs-item', { action: 'delete', id: b.id });
+            loadApps();
+          } catch (e) { alert(e.message); }
+        };
+        tdOp.appendChild(bDel);
+        tr.appendChild(tdOp);
+        const tdHandle = el('td', 'col-fav-handle');
+        const handle = el('span', 'fav-handle', '⠿');
+        handle.title = '按住拖动调整顺序';
+        handle.addEventListener('mousedown', () => { tr.draggable = true; });
+        tr.addEventListener('dragstart', (e) => {
+          dragId = b.id;
+          tr.classList.add('dragging');
+          if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', b.id); } catch (err) {} }
+        });
+        tr.addEventListener('dragover', (e) => { e.preventDefault(); if (dragId && dragId !== b.id) tr.classList.add('drag-over'); });
+        tr.addEventListener('dragleave', () => { tr.classList.remove('drag-over'); });
+        tr.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          tr.classList.remove('drag-over');
+          if (!dragId || dragId === b.id) return;
+          const list = (appsData && appsData.items) || [];
+          const from = list.findIndex((x) => x.id === dragId);
+          const to = list.findIndex((x) => x.id === b.id);
+          if (from < 0 || to < 0) return;
+          const moved = list.splice(from, 1)[0];
+          list.splice(to, 0, moved);
+          renderAppsPage(); // 乐观更新
+          try {
+            await api('POST', '/api/app-favs-item', { action: 'reorder', ids: list.map((x) => x.id) });
+          } catch (e2) {
+            alert('保存排序失败：' + e2.message);
+            loadApps();
+          }
+        });
+        tr.addEventListener('dragend', () => { tr.classList.remove('dragging', 'drag-over'); tr.draggable = false; dragId = null; });
+        tdHandle.appendChild(handle);
+        tr.appendChild(tdHandle);
+      }
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+  }
+
+  function openAppsAddModal() {
+    openModal('添加应用');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '目标两种写法任选：① 本机程序完整路径（以 .exe/.lnk 结尾，桌面版点击启动）② 应用协议链接（如 weixin://，网页版点击时浏览器可能弹确认框）'));
+    if (isTauriApp) {
+      const probeBox = el('div', 'app-probe');
+      body.appendChild(probeBox);
+      probeBox.appendChild(el('div', 'modal-hint', '检测本机常见应用（点击即填入表单）：'));
+      const row = el('div', 'app-probe-row');
+      probeBox.appendChild(row);
+      row.appendChild(el('span', 'modal-hint', '检测中…'));
+      tauriInvoke('probe_apps').then((found) => {
+        row.innerHTML = '';
+        const list = found || [];
+        if (!list.length) { row.appendChild(el('span', 'modal-hint', '未检测到常见应用，请手动填写下方表单')); return; }
+        list.forEach((it) => {
+          const b = el('button', 'btn-edit', '＋ ' + it[0]);
+          b.onclick = () => { inName.value = it[0]; inTarget.value = it[1]; };
+          row.appendChild(b);
+        });
+      }).catch(() => { row.innerHTML = ''; row.appendChild(el('span', 'modal-hint', '探测不可用，请手动填写下方表单')); });
+    }
+    const lab1 = el('label', 'app-form-label', '名称');
+    body.appendChild(lab1);
+    const inName = el('input');
+    inName.placeholder = '如：微信';
+    body.appendChild(inName);
+    const lab2 = el('label', 'app-form-label', '目标');
+    body.appendChild(lab2);
+    const inTarget = el('input');
+    inTarget.placeholder = 'C:\\Program Files\\Tencent\\WeChat\\WeChat.exe 或 weixin://';
+    body.appendChild(inTarget);
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', '添加');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    foot.appendChild(bOk);
+    foot.appendChild(bCancel);
+    body.appendChild(foot);
+    bOk.onclick = async () => {
+      try {
+        await api('POST', '/api/app-favs-item', { action: 'add', item: { name: inName.value, target: inTarget.value } });
+        closeModal();
+        loadApps();
+      } catch (e) { alert(e.message); }
+    };
+  }
+
   function showPage(p) {
     $('#chat-page').classList.toggle('hidden', p !== 'chat');
     $('#price-page').classList.toggle('hidden', p !== 'price');
@@ -2166,16 +2369,19 @@
     $('#recv-page').classList.toggle('hidden', p !== 'recv');
     $('#inv-page').classList.toggle('hidden', p !== 'inv');
     $('#fav-page').classList.toggle('hidden', p !== 'fav');
+    $('#apps-page').classList.toggle('hidden', p !== 'apps');
     $('#btn-prices').classList.toggle('active', p === 'price');
     $('#btn-stock').classList.toggle('active', p === 'stock');
     $('#btn-recv').classList.toggle('active', p === 'recv');
     $('#btn-inv').classList.toggle('active', p === 'inv');
     $('#btn-fav').classList.toggle('active', p === 'fav');
+    $('#btn-apps').classList.toggle('active', p === 'apps');
     if (p === 'price') loadPriceData();
     if (p === 'stock') loadStock();
     if (p === 'recv') loadRecv();
     if (p === 'inv') loadInv();
     if (p === 'fav') loadFav();
+    if (p === 'apps') loadApps();
   }
 
   let priceEdit = null; // 价格表改价进行中 {name, value}
@@ -3267,6 +3473,8 @@
   $('#btn-recv').onclick = () => showPage('recv');
   $('#btn-inv').onclick = () => showPage('inv');
   $('#btn-fav').onclick = () => showPage('fav');
+  $('#btn-apps').onclick = () => showPage('apps');
+  $('#apps-search').oninput = () => renderAppsPage();
   $('#stock-search').oninput = () => renderStockPage();
   $('#inv-search').oninput = () => renderInvPage();
   $('#btn-logout').onclick = () => doLogout(false);

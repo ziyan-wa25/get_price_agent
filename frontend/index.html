@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=2026061945">
+  <link rel="stylesheet" href="styles.css?v=2026061946">
 </head>
 
 <body>
@@ -39,6 +39,7 @@
       <button id="btn-recv" class="side-btn">🧾 应收明细</button>
       <button id="btn-inv" class="side-btn">📊 发票进项统计</button>
       <button id="btn-fav" class="side-btn">🔖 网页收藏夹</button>
+      <button id="btn-apps" class="side-btn">🚀 应用收藏夹</button>
       <div class="side-label">历史报价</div>
       <div id="history-list" class="history-list"></div>
       <div class="side-footer">
@@ -97,6 +98,14 @@
         </div>
         <div id="fav-content" class="price-content"></div>
       </div>
+      <!-- 应用收藏夹页（admin 可管理；桌面版点击启动本机应用/跳默认浏览器） -->
+      <div id="apps-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="apps-info" class="stock-info"></div>
+          <input id="apps-search" class="price-search" placeholder="搜索应用名称">
+        </div>
+        <div id="apps-content" class="price-content"></div>
+      </div>
     </main>
 
     <!-- 手机底部导航（≤768px 才显示；点击转发到侧栏对应按钮，逻辑零重复） -->
@@ -120,12 +129,12 @@
     </div>
   </div>
 
-  <script src="config.js?v=2026061945"></script>
-  <script src="app.js?v=2026061945"></script>
+  <script src="config.js?v=2026061946"></script>
+  <script src="app.js?v=2026061946"></script>
   <script>
     // PWA：注册 Service Worker（仅 https 或 localhost 生效；用 file:// 本地打开时自动跳过，不影响任何现有功能）
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
-      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=2026061945').catch(function () {}); });
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=2026061946').catch(function () {}); });
     }
   </script>
 </body>
