@@ -57,6 +57,16 @@ input, textarea { font-family: inherit; outline: none; }
   transition: background .15s;
 }
 .new-chat-btn:hover { background: #2c2d2f; }
+/* 侧栏顶行两格：左「＋ 新建报价」右「📋 配件价格表」；省出一行，下面四项自动上移 */
+.side-duo { display: flex; gap: 8px; align-items: stretch; }
+.side-duo .new-chat-btn {
+  flex: 1; width: auto; padding: 10px 6px;
+  display: flex; align-items: center; justify-content: center; white-space: nowrap;
+}
+.side-duo .side-btn {
+  flex: 1; width: auto; padding: 10px 8px;
+  display: flex; align-items: center; font-size: 13.5px;
+}
 .side-label { font-size: 12px; color: #7a7a7a; margin: 16px 6px 6px; }
 .history-list { flex: 1; overflow-y: auto; }
 .history-item {
