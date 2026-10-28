@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-56（批准配色：是蓝/否红/未批无色）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-57（行底色按批准状态：是蓝/否红/未批无色）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2555,7 +2555,9 @@
       const tr = el('tr');
       const own = it.by === me;
       if (own) tr.classList.add('dp-row-own');
-      // 配色：批准=蓝、否=红、未批=无色（不再整行标红）
+      // 整行底色按批准状态：是=蓝底 / 否=红底 / 未批=无色（勾叉样式不变）
+      if (it.approved === true) tr.classList.add('dp-row-yes');
+      if (it.approved === false) tr.classList.add('dp-row-no');
       const mk = (cls, text, label) => {
         const td = el('td', cls);
         td.dataset.label = label;

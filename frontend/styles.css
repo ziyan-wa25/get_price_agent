@@ -557,7 +557,9 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .dispatch-table .col-dp-op { width: 120px; }
 .dispatch-table td { word-break: break-word; }
 .dispatch-table tr.dp-row-own td { background: #f8faff; } /* 自己的申请淡蓝底标识 */
-/* 批准列配色：是=蓝 / 否=红 / 未批=无色 */
+/* 整行底色按批准状态（后写优先，盖过自己行的淡蓝）：是=蓝底 / 否=红底 / 未批=无色 */
+.dispatch-table tr.dp-row-yes td { background: #eef2ff; }
+.dispatch-table tr.dp-row-no td { background: #fdf3f2; }
 .dp-appr-btns { display: inline-flex; gap: 4px; }
 .dp-appr-btn {
   min-width: 28px; padding: 2px 7px; font-size: 13px; line-height: 1.4;
