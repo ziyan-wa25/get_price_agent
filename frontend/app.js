@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-49（统计日期区间/可见性全局一处设置）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-50（可见性勾选全员联动）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2644,13 +2644,14 @@
       body.innerHTML = '';
     }
     const cur = new Set((dispatchData && dispatchData.visList) || []);
-    body.appendChild(el('div', 'modal-hint', '这里的名单对**所有**外派申请统一生效：名单内成员与管理员能看到「客户名称/详细地址」明文；名单外成员这两列显示 *******。不勾任何人 = 所有人可见。'));
-    const sel = new Set(cur);
+    body.appendChild(el('div', 'modal-hint', '这里的名单对**所有**外派申请统一生效：名单内成员与管理员能看到「客户名称/详细地址」明文；名单外成员这两列显示 *******。勾选「所有成员」= 全员可见。'));
+    // 空名单 = 所有人可见 → 渲染成全员勾选，保证「所有人」与成员勾选框状态永远一致
+    const sel = cur.size === 0 ? new Set((favUsers || []).map((u) => u.username)) : cur;
     const publicRow = el('label', 'fav-vis-item fav-vis-all');
     const cbAll = el('input');
     cbAll.type = 'checkbox';
     publicRow.appendChild(cbAll);
-    publicRow.appendChild(el('span', '', '所有成员（等同于清空名单：所有人可见）'));
+    publicRow.appendChild(el('span', '', '所有成员（勾选=全员可见，取消=全员不可见）'));
     body.appendChild(publicRow);
     const members = (favUsers || []).filter((u) => u.username !== me.username);
     members.forEach((u) => {
@@ -2658,13 +2659,19 @@
       const cb = el('input');
       cb.type = 'checkbox';
       cb.checked = sel.has(u.username);
-      cb.onchange = () => { if (cb.checked) sel.add(u.username); else sel.delete(u.username); };
+      cb.onchange = () => {
+        if (cb.checked) sel.add(u.username); else sel.delete(u.username);
+        cbAll.checked = members.length > 0 && members.every((x) => sel.has(x.username));
+      };
       lab.appendChild(cb);
       lab.appendChild(el('span', '', u.username));
       body.appendChild(lab);
     });
-    cbAll.checked = sel.size === 0;
-    cbAll.onchange = () => { if (cbAll.checked) members.forEach((u) => sel.delete(u.username)); else if (!sel.size) cbAll.checked = false; };
+    cbAll.checked = members.length > 0 && members.every((x) => sel.has(x.username));
+    cbAll.onchange = () => {
+      members.forEach((u) => { if (cbAll.checked) sel.add(u.username); else sel.delete(u.username); });
+      members.forEach((u, i) => { body.querySelectorAll('.fav-vis-item input[type=checkbox]')[i + 1].checked = cbAll.checked; });
+    };
     const foot = el('div', 'form-row');
     const bOk = el('button', 'primary', '保存');
     const bCancel = el('button', '', '取消');
