@@ -574,6 +574,9 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
   padding: 6px 12px; margin: 0 0 10px;
   display: flex; flex-direction: column; gap: 8px;
 }
+/* 统计弹窗：日期区间行 */
+.stats-range { display: flex; gap: 10px; align-items: flex-end; margin: 4px 0 10px; flex-wrap: wrap; }
+.stats-range .stats-date { width: 150px; }
 
 /* 桌面应用缩放改用 WebView2 原生 ZoomFactor（main.rs setup 中 set_zoom(0.8)）：
    CSS zoom 挂根元素会破坏合成器滚动优化导致滚轮卡顿，已弃用；tauri-app 类保留备用 */

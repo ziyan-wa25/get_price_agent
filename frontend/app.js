@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-48（左下角设置/应用收藏夹显示开关）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-49（统计日期区间/可见性全局一处设置）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2489,6 +2489,11 @@
       const bStats = el('button', 'primary', '📊 申请次数统计');
       bStats.onclick = openDispatchStatsModal;
       bar.appendChild(bStats);
+      const nVis = (d.visList || []).length;
+      const bVis = el('button', 'fav-vis-btn', '👥 客户/地址可见性：' + (nVis ? nVis + ' 人可见' : '所有人可见'));
+      bVis.title = '统一设置所有外派申请「客户名称/详细地址」对哪些成员可见（名单外显示 *******）';
+      bVis.onclick = () => openDispatchVisModal(bVis);
+      bar.appendChild(bVis);
     }
     box.innerHTML = '';
     box.appendChild(bar);
@@ -2549,12 +2554,6 @@
         bEdit.title = '修改内容后批准状态将重置，需管理员重新批准';
         bEdit.onclick = () => openDispatchFormModal(it);
         tdOp.appendChild(bEdit);
-      }
-      if (d.canAdmin) {
-        const bVis = el('button', 'fav-vis-btn', it.visibleTo && it.visibleTo.length ? '👥 ' + it.visibleTo.length + ' 人' : '👥 所有人');
-        bVis.title = '设置哪些成员可以看到这条申请的客户名称/详细地址';
-        bVis.onclick = () => openDispatchVisModal(it, bVis);
-        tdOp.appendChild(bVis);
       }
       if (own || d.canAdmin) {
         const bDel = el('button', 'fav-del', '🗑');
@@ -2632,8 +2631,8 @@
     };
   }
 
-  async function openDispatchVisModal(it, visBtn) {
-    openModal('可见人员 — ' + it.date + '（' + it.by + '）');
+  async function openDispatchVisModal(visBtn) {
+    openModal('客户名称/详细地址可见性（全部申请统一生效）');
     const body = $('#modal-body');
     if (!favUsers) {
       body.appendChild(el('div', 'modal-hint', '加载成员列表中…'));
@@ -2641,11 +2640,12 @@
         const ur = await api('GET', '/api/users');
         favUsers = (ur.users || []).map((u) => ({ username: u.username, role: u.role }));
       } catch (err) { favUsers = []; }
-      if ($('#modal-title').textContent.indexOf('可见人员') === -1) return;
+      if ($('#modal-title').textContent.indexOf('可见性') === -1) return;
       body.innerHTML = '';
     }
-    body.appendChild(el('div', 'modal-hint', '勾选哪些成员可以看到这条申请的「客户名称/详细地址」。不勾任何人 = 所有人可见。'));
-    const sel = new Set(it.visibleTo || []);
+    const cur = new Set((dispatchData && dispatchData.visList) || []);
+    body.appendChild(el('div', 'modal-hint', '这里的名单对**所有**外派申请统一生效：名单内成员与管理员能看到「客户名称/详细地址」明文；名单外成员这两列显示 *******。不勾任何人 = 所有人可见。'));
+    const sel = new Set(cur);
     const publicRow = el('label', 'fav-vis-item fav-vis-all');
     const cbAll = el('input');
     cbAll.type = 'checkbox';
@@ -2674,23 +2674,25 @@
     body.appendChild(foot);
     bOk.onclick = async () => {
       try {
-        const r = await api('POST', '/api/dispatch-item', { action: 'visibility', id: it.id, visibleTo: cbAll.checked ? [] : members.filter((x) => sel.has(x.username)).map((x) => x.username) });
-        visBtn.textContent = (r.visibleTo && r.visibleTo.length) ? '👥 ' + r.visibleTo.length + ' 人' : '👥 所有人';
+        const r = await api('POST', '/api/dispatch-item', { action: 'vis', value: cbAll.checked ? [] : members.filter((x) => sel.has(x.username)).map((x) => x.username) });
+        const n = (r.value || []).length;
+        if (visBtn) visBtn.textContent = '👥 客户/地址可见性：' + (n ? n + ' 人可见' : '所有人可见');
         closeModal();
+        loadDispatch();
       } catch (e) { alert(e.message); }
     };
   }
 
-  async function openDispatchStatsModal() {
-    openModal('外派申请次数统计');
-    const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '按月统计每位成员的外派申请次数（含已过期/已完成的申请）。'));
-    body.appendChild(el('div', 'modal-hint', '加载中…'));
+  async function renderDispatchStatsContent(zone, from, to) {
+    zone.innerHTML = '';
+    zone.appendChild(el('div', 'modal-hint', '统计中…'));
     try {
-      const r = await api('GET', '/api/dispatch-stats');
-      body.innerHTML = '';
+      const r = await api('POST', '/api/dispatch-stats', { from: from || '', to: to || '' });
+      zone.innerHTML = '';
+      const rangeTxt = (from || to) ? ('统计范围：' + (from || '最早') + ' ～ ' + (to || '至今')) : '统计范围：全部历史申请';
+      zone.appendChild(el('div', 'modal-hint', rangeTxt + '（含已过期/已完成的申请）'));
       const months = r.months || [];
-      if (!months.length) { body.appendChild(el('div', 'modal-hint', '还没有任何外派申请记录')); return; }
+      if (!months.length) { zone.appendChild(el('div', 'modal-hint', '该时间范围内还没有任何外派申请记录')); return; }
       const tbl = el('table', 'stock-table stats-table');
       const trh = el('tr');
       trh.appendChild(el('th', 'col-stats-user', '成员'));
@@ -2709,11 +2711,42 @@
         tbody.appendChild(tr);
       });
       tbl.appendChild(tbody);
-      body.appendChild(tbl);
+      zone.appendChild(tbl);
     } catch (e) {
-      body.innerHTML = '';
-      body.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+      zone.innerHTML = '';
+      zone.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
     }
+  }
+
+  function openDispatchStatsModal() {
+    openModal('外派申请次数统计');
+    const body = $('#modal-body');
+    const rangeRow = el('div', 'stats-range');
+    body.appendChild(rangeRow);
+    const mkDate = (labelText, value) => {
+      const w = el('label', 'rf-field stats-date');
+      w.appendChild(el('span', 'rf-label', labelText));
+      const i = el('input');
+      i.type = 'date';
+      if (value) i.value = value;
+      w.appendChild(i);
+      rangeRow.appendChild(w);
+      return i;
+    };
+    const now = new Date();
+    const monthFirst = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+    const todayStr = now.toLocaleDateString('sv-SE'); // 本地时区 YYYY-MM-DD
+    const inFrom = mkDate('从', monthFirst);
+    const inTo = mkDate('到', todayStr);
+    const zone = el('div');
+    const bGo = el('button', 'primary', '查询');
+    bGo.onclick = () => {
+      if (inFrom.value && inTo.value && inFrom.value > inTo.value) { alert('起始日期不能晚于结束日期'); return; }
+      renderDispatchStatsContent(zone, inFrom.value, inTo.value);
+    };
+    rangeRow.appendChild(bGo);
+    body.appendChild(zone);
+    renderDispatchStatsContent(zone, inFrom.value, inTo.value);
   }
 
   let priceEdit = null; // 价格表改价进行中 {name, value}
