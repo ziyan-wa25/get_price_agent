@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-50（可见性勾选全员联动）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-51（外派未批准行红色标识）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2516,6 +2516,7 @@
       const tr = el('tr');
       const own = it.by === me;
       if (own) tr.classList.add('dp-row-own');
+      if (it.approved === null) tr.classList.add('dp-row-pending'); // 未批准整行淡红标识（同应收逾期行）
       const mk = (cls, text, label) => {
         const td = el('td', cls);
         td.dataset.label = label;
