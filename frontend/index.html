@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=2026061947">
+  <link rel="stylesheet" href="styles.css?v=2026061948">
 </head>
 
 <body>
@@ -45,6 +45,7 @@
       <div id="history-list" class="history-list"></div>
       <div class="side-footer">
         <div id="whoami" class="whoami"></div>
+        <button id="btn-settings" class="side-btn">⚙️ 设置</button>
         <button id="btn-change-pass" class="side-btn">修改密码</button>
         <button id="btn-admin" class="side-btn hidden">账号管理</button>
         <button id="btn-logout" class="side-btn">退出登录</button>
@@ -138,12 +139,12 @@
     </div>
   </div>
 
-  <script src="config.js?v=2026061947"></script>
-  <script src="app.js?v=2026061947"></script>
+  <script src="config.js?v=2026061948"></script>
+  <script src="app.js?v=2026061948"></script>
   <script>
     // PWA：注册 Service Worker（仅 https 或 localhost 生效；用 file:// 本地打开时自动跳过，不影响任何现有功能）
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
-      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=2026061947').catch(function () {}); });
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=2026061948').catch(function () {}); });
     }
   </script>
 </body>

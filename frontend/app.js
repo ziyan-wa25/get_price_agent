@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-47（应用收藏夹个人化/外派预约/弹窗美化）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-48（左下角设置/应用收藏夹显示开关）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -182,6 +182,7 @@
     resetUserData(); // 清掉上一任用户留在内存里的页面数据（价格/库存/应收/历史），防止越权残留
     newChat();
     loadHistory();
+    loadPrefs();
     $('#input').focus();
   }
 
@@ -200,6 +201,7 @@
     favUsers = null;
     appsData = null;
     dispatchData = null;
+    prefs = null;
     invData = null;
     $('#fav-content').innerHTML = '';
     $('#inv-content').innerHTML = '';
@@ -2388,6 +2390,48 @@
     };
   }
 
+  // ---------- 设置（左下角 ⚙️；个人偏好存后端跟账号走，之后可扩展更多设置项） ----------
+  let prefs = null;
+
+  function applyPrefs() {
+    // 应用收藏夹入口开关（默认显示；仅对自己生效）
+    $('#btn-apps').classList.toggle('hidden', !!(prefs && prefs.hideApps));
+    if (prefs && prefs.hideApps && !$('#apps-page').classList.contains('hidden')) showPage('chat');
+  }
+
+  async function loadPrefs() {
+    try {
+      const r = await api('GET', '/api/prefs');
+      prefs = r.prefs || {};
+    } catch (e) { prefs = prefs || {}; }
+    applyPrefs();
+  }
+
+  function openSettingsModal() {
+    openModal('设置');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'settings-label', '页面开关'));
+    const sec = el('div', 'settings-section');
+    body.appendChild(sec);
+    const lab = el('label', 'fav-vis-item');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = !(prefs && prefs.hideApps);
+    lab.appendChild(cb);
+    lab.appendChild(el('span', '', '显示「应用收藏夹」入口'));
+    sec.appendChild(lab);
+    sec.appendChild(el('div', 'modal-hint', '关闭后侧栏（含手机端抽屉）不再显示应用收藏夹；已收藏的应用与数据不受影响。设置只对自己生效，改动立即保存。'));
+    cb.onchange = async () => {
+      try {
+        const r = await api('POST', '/api/prefs-item', { key: 'hideApps', value: !cb.checked });
+        prefs = prefs || {};
+        prefs.hideApps = r.value;
+        applyPrefs();
+      } catch (e) { cb.checked = !cb.checked; alert(e.message); }
+    };
+    body.appendChild(el('div', 'modal-hint', '更多设置项后续会陆续加入。'));
+  }
+
   function showPage(p) {
     $('#chat-page').classList.toggle('hidden', p !== 'chat');
     $('#price-page').classList.toggle('hidden', p !== 'price');
@@ -3765,6 +3809,7 @@
   $('#apps-search').oninput = () => renderAppsPage();
   $('#btn-dispatch').onclick = () => showPage('dispatch');
   $('#dispatch-search').oninput = () => renderDispatchPage();
+  $('#btn-settings').onclick = () => openSettingsModal();
   $('#stock-search').oninput = () => renderStockPage();
   $('#inv-search').oninput = () => renderInvPage();
   $('#btn-logout').onclick = () => doLogout(false);
