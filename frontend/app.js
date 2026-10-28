@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-51（外派未批准行红色标识）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-52（统计仅成员合计/查询按钮统一样式）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2699,23 +2699,20 @@
       zone.innerHTML = '';
       const rangeTxt = (from || to) ? ('统计范围：' + (from || '最早') + ' ～ ' + (to || '至今')) : '统计范围：全部历史申请';
       zone.appendChild(el('div', 'modal-hint', rangeTxt + '（含已过期/已完成的申请）'));
-      const months = r.months || [];
-      if (!months.length) { zone.appendChild(el('div', 'modal-hint', '该时间范围内还没有任何外派申请记录')); return; }
+      const users = r.users || [];
+      if (!users.length) { zone.appendChild(el('div', 'modal-hint', '该时间范围内还没有任何外派申请记录')); return; }
       const tbl = el('table', 'stock-table stats-table');
       const trh = el('tr');
       trh.appendChild(el('th', 'col-stats-user', '成员'));
-      months.forEach((m) => trh.appendChild(el('th', 'col-stats-month', m)));
-      trh.appendChild(el('th', 'col-stats-month', '合计'));
+      trh.appendChild(el('th', '', '申请次数'));
       const thead = el('thead');
       thead.appendChild(trh);
       tbl.appendChild(thead);
       const tbody = el('tbody');
-      (r.users || []).forEach((u) => {
+      users.forEach((u) => {
         const tr = el('tr');
         tr.appendChild(el('td', 'col-stats-user-t', u.user));
-        let total = 0;
-        months.forEach((m) => { const n = u.months[m] || 0; total += n; tr.appendChild(el('td', 'num', n ? String(n) : '—')); });
-        tr.appendChild(el('td', 'num stats-total', String(total)));
+        tr.appendChild(el('td', 'num stats-total', String(u.count || 0)));
         tbody.appendChild(tr);
       });
       tbl.appendChild(tbody);
@@ -2747,7 +2744,7 @@
     const inFrom = mkDate('从', monthFirst);
     const inTo = mkDate('到', todayStr);
     const zone = el('div');
-    const bGo = el('button', 'primary', '查询');
+    const bGo = el('button', 'btn-query', '查询');
     bGo.onclick = () => {
       if (inFrom.value && inTo.value && inFrom.value > inTo.value) { alert('起始日期不能晚于结束日期'); return; }
       renderDispatchStatsContent(zone, inFrom.value, inTo.value);
