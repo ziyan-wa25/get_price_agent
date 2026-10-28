@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-46（应用收藏夹/桌面跳默认浏览器）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-47（应用收藏夹个人化/外派预约/弹窗美化）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -199,6 +199,7 @@
     favData = null;
     favUsers = null;
     appsData = null;
+    dispatchData = null;
     invData = null;
     $('#fav-content').innerHTML = '';
     $('#inv-content').innerHTML = '';
@@ -1741,26 +1742,31 @@
 
   // admin 修改单条应收明细（重新导入会被新文件覆盖）
   function openRecvEditModal(row) {
-    openModal('修改应收明细（重新导入后会被覆盖）');
+    openModal('修改应收明细');
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '本次修改立即生效，但下次导入 Excel 会被新文件整体覆盖。'));
+    body.appendChild(el('div', 'modal-hint', '本次修改立即生效；下次导入 Excel 时会被新文件整体覆盖。'));
+    const grid = el('div', 'recv-edit-grid');
+    body.appendChild(grid);
     const fields = [
-      ['date', '日期（如 2025-04-21）'],
-      ['client', '往来客户'],
-      ['item', '货品名称'],
-      ['qty', '交易数量'],
-      ['price', '交易单价'],
-      ['amount', '应收增加（可负）'],
-      ['note', '附加说明'],
-      ['handler', '经手人（须与账号名完全一致该用户才可见）'],
+      ['date', '日期', false],
+      ['client', '往来客户', false],
+      ['item', '货品名称', false],
+      ['qty', '交易数量', false],
+      ['price', '交易单价', false],
+      ['amount', '应收增加（可负）', false],
+      ['note', '附加说明', true],
+      ['handler', '经手人（须与账号名完全一致该用户才可见）', true],
     ];
     const inputs = {};
-    fields.forEach(([k, ph]) => {
+    fields.forEach(([k, ph, wide]) => {
+      const wrap = el('label', 'rf-field' + (wide ? ' rf-wide' : ''));
+      wrap.appendChild(el('span', 'rf-label', ph));
       const i = el('input');
       i.placeholder = ph;
       i.value = row[k] == null ? '' : String(row[k]);
       inputs[k] = i;
-      body.appendChild(i);
+      wrap.appendChild(i);
+      grid.appendChild(wrap);
     });
     const foot = el('div', 'form-row');
     const bOk = el('button', 'primary', '保存修改');
@@ -2213,7 +2219,7 @@
       info.appendChild(el('span', 'stock-import-time', '🕐 最近一次修改：' + new Date(d.updatedAt).toLocaleString('zh-CN') + (d.updatedBy ? '（' + d.updatedBy + '）' : '')));
     }
     const bar = el('div', 'stock-toolbar');
-    if (d.canManage) {
+    {
       const bAdd = el('button', 'primary', '＋ 添加应用');
       bAdd.onclick = openAppsAddModal;
       bar.appendChild(bAdd);
@@ -2223,7 +2229,7 @@
     const kw = (($('#apps-search') && $('#apps-search').value) || '').trim().toLowerCase();
     const items = (d.items || []).filter((a) => !kw || (a.name || '').toLowerCase().includes(kw) || (a.target || '').toLowerCase().includes(kw));
     if (!items.length) {
-      box.appendChild(el('div', 'modal-hint', d.canManage ? (kw ? '没有匹配的应用' : '还没有应用：点「＋ 添加应用」添加第一个（如微信、网易邮箱大师）') : (kw ? '没有匹配的应用' : '管理员还没有添加应用')));
+      box.appendChild(el('div', 'modal-hint', kw ? '没有匹配的应用' : '你的应用收藏夹还是空的：点「＋ 添加应用」添加常用软件（如微信、网易邮箱大师）'));
       return;
     }
     const tbl = el('table', 'stock-table apps-table');
@@ -2231,7 +2237,7 @@
     trh.appendChild(el('th', 'col-apps-name', '名称'));
     trh.appendChild(el('th', 'col-apps-kind', '类型'));
     trh.appendChild(el('th', '', '目标'));
-    if (d.canManage) {
+    {
       trh.appendChild(el('th', 'col-fav-op', '操作'));
       trh.appendChild(el('th', 'col-fav-handle', '')); // 拖动排序把手
     }
@@ -2263,7 +2269,7 @@
       tdTarget.textContent = b.target;
       tdTarget.title = b.target;
       tr.appendChild(tdTarget);
-      if (d.canManage) {
+      {
         const tdOp = el('td', 'col-fav-op');
         const bDel = el('button', 'fav-del', '🗑 删除');
         bDel.onclick = async () => {
@@ -2315,37 +2321,57 @@
   }
 
   function openAppsAddModal() {
-    openModal('添加应用');
+    openModal('添加应用到我的收藏夹');
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '目标两种写法任选：① 本机程序完整路径（以 .exe/.lnk 结尾，桌面版点击启动）② 应用协议链接（如 weixin://，网页版点击时浏览器可能弹确认框）'));
+    // 名称：一大横行输入框，灰色占位「名称」
+    const inName = el('input', 'app-big-input');
+    inName.placeholder = '名称';
+    body.appendChild(inName);
+    // 位置：宽输入 + 桌面版可从系统文件管理器选择 exe/lnk
+    const lab2 = el('label', 'app-form-label', '位置（本机程序路径或应用协议链接）');
+    body.appendChild(lab2);
+    const locRow = el('div', 'app-loc-row');
+    body.appendChild(locRow);
+    const inTarget = el('input');
+    inTarget.placeholder = isTauriApp ? '如 C:\\Program Files\\Tencent\\WeChat\\WeChat.exe 或 weixin://' : '如 weixin://（网页版仅支持应用协议链接）';
+    locRow.appendChild(inTarget);
+    if (isTauriApp) {
+      const bPick = el('button', 'btn-edit', '📁 从文件管理器选择');
+      bPick.title = '打开系统文件选择器，找到程序后自动填入位置与名称';
+      bPick.onclick = async () => {
+        try {
+          const picked = await tauriInvoke('plugin:dialog|open', { options: { multiple: false, directory: false, title: '选择应用程序', filters: [{ name: '程序/快捷方式', extensions: ['exe', 'lnk'] }] } });
+          const p = Array.isArray(picked) ? picked[0] : picked;
+          if (!p) return;
+          inTarget.value = p;
+          if (!inName.value.trim()) {
+            const base = String(p).split('\\').pop().replace(/\.(exe|lnk)$/i, '');
+            inName.value = base;
+          }
+        } catch (e) { alert('打开文件选择器失败：' + e.message); }
+      };
+      locRow.appendChild(bPick);
+    }
+    // 常见应用快捷填入（桌面版探测）
     if (isTauriApp) {
       const probeBox = el('div', 'app-probe');
       body.appendChild(probeBox);
-      probeBox.appendChild(el('div', 'modal-hint', '检测本机常见应用（点击即填入表单）：'));
+      probeBox.appendChild(el('div', 'app-form-label', '或从检测到的常用应用中选择：'));
       const row = el('div', 'app-probe-row');
       probeBox.appendChild(row);
       row.appendChild(el('span', 'modal-hint', '检测中…'));
       tauriInvoke('probe_apps').then((found) => {
         row.innerHTML = '';
         const list = found || [];
-        if (!list.length) { row.appendChild(el('span', 'modal-hint', '未检测到常见应用，请手动填写下方表单')); return; }
+        if (!list.length) { row.appendChild(el('span', 'modal-hint', '未检测到常见应用，请手动填写上方表单')); return; }
         list.forEach((it) => {
-          const b = el('button', 'btn-edit', '＋ ' + it[0]);
+          const b = el('button', 'btn-edit app-chip', it[0]);
           b.onclick = () => { inName.value = it[0]; inTarget.value = it[1]; };
           row.appendChild(b);
         });
-      }).catch(() => { row.innerHTML = ''; row.appendChild(el('span', 'modal-hint', '探测不可用，请手动填写下方表单')); });
+      }).catch(() => { row.innerHTML = ''; row.appendChild(el('span', 'modal-hint', '探测不可用，请手动填写上方表单')); });
     }
-    const lab1 = el('label', 'app-form-label', '名称');
-    body.appendChild(lab1);
-    const inName = el('input');
-    inName.placeholder = '如：微信';
-    body.appendChild(inName);
-    const lab2 = el('label', 'app-form-label', '目标');
-    body.appendChild(lab2);
-    const inTarget = el('input');
-    inTarget.placeholder = 'C:\\Program Files\\Tencent\\WeChat\\WeChat.exe 或 weixin://';
-    body.appendChild(inTarget);
+    body.appendChild(el('div', 'modal-hint', '说明：本机程序路径仅桌面版可启动；协议链接（weixin:// 等）桌面与网页均可使用。'));
     const foot = el('div', 'form-row');
     const bOk = el('button', 'primary', '添加');
     const bCancel = el('button', '', '取消');
@@ -2370,18 +2396,280 @@
     $('#inv-page').classList.toggle('hidden', p !== 'inv');
     $('#fav-page').classList.toggle('hidden', p !== 'fav');
     $('#apps-page').classList.toggle('hidden', p !== 'apps');
+    $('#dispatch-page').classList.toggle('hidden', p !== 'dispatch');
     $('#btn-prices').classList.toggle('active', p === 'price');
     $('#btn-stock').classList.toggle('active', p === 'stock');
     $('#btn-recv').classList.toggle('active', p === 'recv');
     $('#btn-inv').classList.toggle('active', p === 'inv');
     $('#btn-fav').classList.toggle('active', p === 'fav');
     $('#btn-apps').classList.toggle('active', p === 'apps');
+    $('#btn-dispatch').classList.toggle('active', p === 'dispatch');
     if (p === 'price') loadPriceData();
     if (p === 'stock') loadStock();
     if (p === 'recv') loadRecv();
     if (p === 'inv') loadInv();
     if (p === 'fav') loadFav();
     if (p === 'apps') loadApps();
+    if (p === 'dispatch') loadDispatch();
+  }
+
+  // ---------- 外派预约申请（日期升序、过期自动废弃；客户名/地址按行可见名单；批准仅 admin） ----------
+  let dispatchData = null;
+
+  async function loadDispatch() {
+    const box = $('#dispatch-content');
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      dispatchData = await api('GET', '/api/dispatch');
+      renderDispatchPage();
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
+  function dpApprText(v) { return v === true ? '✔ 是' : (v === false ? '✘ 否' : '— 未批'); }
+
+  function renderDispatchPage() {
+    const box = $('#dispatch-content');
+    const info = $('#dispatch-info');
+    info.innerHTML = '';
+    const d = dispatchData || { items: [], me: '', canAdmin: false };
+    const me = d.me || '';
+    const bar = el('div', 'stock-toolbar');
+    const bAdd = el('button', 'primary', '＋ 新增申请');
+    bAdd.onclick = () => openDispatchFormModal(null);
+    bar.appendChild(bAdd);
+    if (d.canAdmin) {
+      const bStats = el('button', 'primary', '📊 申请次数统计');
+      bStats.onclick = openDispatchStatsModal;
+      bar.appendChild(bStats);
+    }
+    box.innerHTML = '';
+    box.appendChild(bar);
+    const kw = (($('#dispatch-search') && $('#dispatch-search').value) || '').trim().toLowerCase();
+    const items = (d.items || []).filter((it) => !kw
+      || [it.date, it.by, it.clientName, it.address, it.matter, it.note].some((v) => String(v || '').toLowerCase().includes(kw)));
+    if (!items.length) {
+      box.appendChild(el('div', 'modal-hint', '当前没有待办的外派预约：点「＋ 新增申请」提交一个（已过期的申请会自动归档，不再显示）'));
+      return;
+    }
+    const tbl = el('table', 'stock-table dispatch-table');
+    const trh = el('tr');
+    [['col-dp-date', '日期'], ['col-dp-by', '申请人'], ['col-dp-client', '客户名称'], ['col-dp-addr', '详细地址'], ['col-dp-matter', '事宜'], ['col-dp-note', '备注'], ['col-dp-appr', '批准']].forEach(([c, t]) => trh.appendChild(el('th', c, t)));
+    trh.appendChild(el('th', 'col-dp-op', '操作'));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    items.forEach((it) => {
+      const tr = el('tr');
+      const own = it.by === me;
+      if (own) tr.classList.add('dp-row-own');
+      const mk = (cls, text, label) => {
+        const td = el('td', cls);
+        td.dataset.label = label;
+        td.textContent = text;
+        td.title = text;
+        tr.appendChild(td);
+        return td;
+      };
+      mk('col-dp-date-t', it.date, '日期');
+      mk('col-dp-by-t', it.by, '申请人');
+      mk('col-dp-client-t', it.clientName || '', '客户名称');
+      mk('col-dp-addr-t', it.address || '', '详细地址');
+      mk('col-dp-matter-t', it.matter || '', '事宜');
+      mk('col-dp-note-t', it.note || '', '备注');
+      const tdAppr = el('td', 'col-dp-appr-t');
+      tdAppr.dataset.label = '批准';
+      if (d.canAdmin) {
+        const sel = el('select', 'dp-appr-select');
+        [['', '— 未批'], ['yes', '✔ 是'], ['no', '✘ 否']].forEach(([v, t2]) => { const o = el('option', '', t2); o.value = v; sel.appendChild(o); });
+        sel.value = it.approved === true ? 'yes' : (it.approved === false ? 'no' : '');
+        sel.onchange = async () => {
+          try {
+            await api('POST', '/api/dispatch-item', { action: 'approve', id: it.id, value: sel.value === 'yes' ? true : (sel.value === 'no' ? false : null) });
+            loadDispatch();
+          } catch (e) { alert(e.message); loadDispatch(); }
+        };
+        tdAppr.appendChild(sel);
+      } else {
+        tdAppr.appendChild(el('span', 'dp-appr-text' + (it.approved === true ? ' dp-yes' : (it.approved === false ? ' dp-no' : '')), dpApprText(it.approved)));
+      }
+      tr.appendChild(tdAppr);
+      const tdOp = el('td', 'col-dp-op');
+      tdOp.dataset.label = '操作';
+      if (own) {
+        const bEdit = el('button', 'btn-edit', '✏ 修改');
+        bEdit.title = '修改内容后批准状态将重置，需管理员重新批准';
+        bEdit.onclick = () => openDispatchFormModal(it);
+        tdOp.appendChild(bEdit);
+      }
+      if (d.canAdmin) {
+        const bVis = el('button', 'fav-vis-btn', it.visibleTo && it.visibleTo.length ? '👥 ' + it.visibleTo.length + ' 人' : '👥 所有人');
+        bVis.title = '设置哪些成员可以看到这条申请的客户名称/详细地址';
+        bVis.onclick = () => openDispatchVisModal(it, bVis);
+        tdOp.appendChild(bVis);
+      }
+      if (own || d.canAdmin) {
+        const bDel = el('button', 'fav-del', '🗑');
+        bDel.title = own ? '删除自己的申请' : '管理员删除';
+        bDel.onclick = async () => {
+          if (!confirm('删除「' + it.by + '」在 ' + it.date + ' 的外派申请？')) return;
+          try {
+            await api('POST', '/api/dispatch-item', { action: 'delete', id: it.id });
+            loadDispatch();
+          } catch (e) { alert(e.message); }
+        };
+        tdOp.appendChild(bDel);
+      }
+      tr.appendChild(tdOp);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+  }
+
+  function openDispatchFormModal(existing) {
+    openModal(existing ? '修改外派申请' : '新增外派申请');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', existing
+      ? '内容一旦修改，批准状态将重置为「未批」，需管理员重新批准。'
+      : '申请人默认为当前账号；提交后由管理员批准。客户名称/详细地址默认所有人可见，管理员可按行设置可见名单。'));
+    const grid = el('div', 'recv-edit-grid');
+    body.appendChild(grid);
+    const mk = (labelText, input, wide) => {
+      const w = el('label', 'rf-field' + (wide ? ' rf-wide' : ''));
+      w.appendChild(el('span', 'rf-label', labelText));
+      w.appendChild(input);
+      grid.appendChild(w);
+    };
+    const inDate = el('input');
+    inDate.type = 'date';
+    inDate.min = dispatchData ? dispatchData.today : '';
+    inDate.value = existing ? existing.date : '';
+    mk('日期（点击日历选择）', inDate);
+    const inBy = el('input');
+    inBy.value = dispatchData ? dispatchData.me : '';
+    inBy.disabled = true;
+    mk('申请人', inBy);
+    const inClient = el('input');
+    inClient.placeholder = '客户名称';
+    inClient.value = existing ? (existing.clientName || '') : '';
+    mk('客户名称', inClient, true);
+    const inAddr = el('input');
+    inAddr.placeholder = '详细地址';
+    inAddr.value = existing ? (existing.address || '') : '';
+    mk('详细地址', inAddr, true);
+    const inMatter = el('input');
+    inMatter.placeholder = '事宜（如：设备巡检 / 方案讲解）';
+    inMatter.value = existing ? (existing.matter || '') : '';
+    mk('事宜', inMatter, true);
+    const inNote = el('input');
+    inNote.placeholder = '备注（可选）';
+    inNote.value = existing ? (existing.note || '') : '';
+    mk('备注', inNote, true);
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', existing ? '保存修改' : '提交申请');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    foot.appendChild(bOk);
+    foot.appendChild(bCancel);
+    body.appendChild(foot);
+    bOk.onclick = async () => {
+      const payload = { date: inDate.value, clientName: inClient.value, address: inAddr.value, matter: inMatter.value, note: inNote.value };
+      try {
+        if (existing) await api('POST', '/api/dispatch-item', { action: 'update', id: existing.id, item: payload });
+        else await api('POST', '/api/dispatch-item', { action: 'add', item: payload });
+        closeModal();
+        loadDispatch();
+      } catch (e) { alert(e.message); }
+    };
+  }
+
+  async function openDispatchVisModal(it, visBtn) {
+    openModal('可见人员 — ' + it.date + '（' + it.by + '）');
+    const body = $('#modal-body');
+    if (!favUsers) {
+      body.appendChild(el('div', 'modal-hint', '加载成员列表中…'));
+      try {
+        const ur = await api('GET', '/api/users');
+        favUsers = (ur.users || []).map((u) => ({ username: u.username, role: u.role }));
+      } catch (err) { favUsers = []; }
+      if ($('#modal-title').textContent.indexOf('可见人员') === -1) return;
+      body.innerHTML = '';
+    }
+    body.appendChild(el('div', 'modal-hint', '勾选哪些成员可以看到这条申请的「客户名称/详细地址」。不勾任何人 = 所有人可见。'));
+    const sel = new Set(it.visibleTo || []);
+    const publicRow = el('label', 'fav-vis-item fav-vis-all');
+    const cbAll = el('input');
+    cbAll.type = 'checkbox';
+    publicRow.appendChild(cbAll);
+    publicRow.appendChild(el('span', '', '所有成员（等同于清空名单：所有人可见）'));
+    body.appendChild(publicRow);
+    const members = (favUsers || []).filter((u) => u.username !== me.username);
+    members.forEach((u) => {
+      const lab = el('label', 'fav-vis-item');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = sel.has(u.username);
+      cb.onchange = () => { if (cb.checked) sel.add(u.username); else sel.delete(u.username); };
+      lab.appendChild(cb);
+      lab.appendChild(el('span', '', u.username));
+      body.appendChild(lab);
+    });
+    cbAll.checked = sel.size === 0;
+    cbAll.onchange = () => { if (cbAll.checked) members.forEach((u) => sel.delete(u.username)); else if (!sel.size) cbAll.checked = false; };
+    const foot = el('div', 'form-row');
+    const bOk = el('button', 'primary', '保存');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    foot.appendChild(bOk);
+    foot.appendChild(bCancel);
+    body.appendChild(foot);
+    bOk.onclick = async () => {
+      try {
+        const r = await api('POST', '/api/dispatch-item', { action: 'visibility', id: it.id, visibleTo: cbAll.checked ? [] : members.filter((x) => sel.has(x.username)).map((x) => x.username) });
+        visBtn.textContent = (r.visibleTo && r.visibleTo.length) ? '👥 ' + r.visibleTo.length + ' 人' : '👥 所有人';
+        closeModal();
+      } catch (e) { alert(e.message); }
+    };
+  }
+
+  async function openDispatchStatsModal() {
+    openModal('外派申请次数统计');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '按月统计每位成员的外派申请次数（含已过期/已完成的申请）。'));
+    body.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      const r = await api('GET', '/api/dispatch-stats');
+      body.innerHTML = '';
+      const months = r.months || [];
+      if (!months.length) { body.appendChild(el('div', 'modal-hint', '还没有任何外派申请记录')); return; }
+      const tbl = el('table', 'stock-table stats-table');
+      const trh = el('tr');
+      trh.appendChild(el('th', 'col-stats-user', '成员'));
+      months.forEach((m) => trh.appendChild(el('th', 'col-stats-month', m)));
+      trh.appendChild(el('th', 'col-stats-month', '合计'));
+      const thead = el('thead');
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+      const tbody = el('tbody');
+      (r.users || []).forEach((u) => {
+        const tr = el('tr');
+        tr.appendChild(el('td', 'col-stats-user-t', u.user));
+        let total = 0;
+        months.forEach((m) => { const n = u.months[m] || 0; total += n; tr.appendChild(el('td', 'num', n ? String(n) : '—')); });
+        tr.appendChild(el('td', 'num stats-total', String(total)));
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      body.appendChild(tbl);
+    } catch (e) {
+      body.innerHTML = '';
+      body.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
   }
 
   let priceEdit = null; // 价格表改价进行中 {name, value}
@@ -3475,6 +3763,8 @@
   $('#btn-fav').onclick = () => showPage('fav');
   $('#btn-apps').onclick = () => showPage('apps');
   $('#apps-search').oninput = () => renderAppsPage();
+  $('#btn-dispatch').onclick = () => showPage('dispatch');
+  $('#dispatch-search').oninput = () => renderDispatchPage();
   $('#stock-search').oninput = () => renderStockPage();
   $('#inv-search').oninput = () => renderInvPage();
   $('#btn-logout').onclick = () => doLogout(false);

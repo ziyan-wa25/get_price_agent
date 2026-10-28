@@ -521,6 +521,52 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .app-kind-exe { background: #f0fdf4; color: #15803d; }
 .app-probe-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .app-form-label { font-size: 12px; color: #666; margin: 8px 0 4px; display: block; }
+/* 添加应用弹窗（美化版）：大横行名称输入 + 位置行 + 常用应用胶囊 */
+.app-big-input {
+  width: 100%; box-sizing: border-box; padding: 14px 16px;
+  font-size: 15px; border: 1px solid #d9dce1; border-radius: 12px;
+  background: #fafbfc; transition: border-color .15s, box-shadow .15s;
+}
+.app-big-input:focus { border-color: #4d6bfe; box-shadow: 0 0 0 3px rgba(77,107,254,.12); outline: none; }
+.app-loc-row { display: flex; gap: 8px; }
+.app-loc-row input {
+  flex: 1; min-width: 0; padding: 10px 12px; font-size: 13.5px;
+  border: 1px solid #d9dce1; border-radius: 10px;
+}
+.app-loc-row .btn-edit { white-space: nowrap; }
+.app-chip { border-radius: 999px; padding: 4px 14px; }
+.app-chip:hover { border-color: #4d6bfe; color: #4d6bfe; }
+/* 表单弹窗通用网格（应收编辑/外派申请表单） */
+.recv-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin: 12px 0 4px; }
+.rf-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rf-field.rf-wide { grid-column: 1 / -1; }
+.rf-label { font-size: 12px; color: #666; }
+.rf-field input {
+  padding: 9px 11px; font-size: 14px;
+  border: 1px solid #d9dce1; border-radius: 9px; background: #fff;
+}
+.rf-field input:focus { border-color: #4d6bfe; box-shadow: 0 0 0 3px rgba(77,107,254,.12); outline: none; }
+.rf-field input:disabled { background: #f2f3f5; color: #666; }
+/* 外派预约申请 */
+.dispatch-table .col-dp-date { width: 108px; }
+.dispatch-table .col-dp-by { width: 96px; }
+.dispatch-table .col-dp-client { width: 180px; }
+.dispatch-table .col-dp-addr { width: 220px; }
+.dispatch-table .col-dp-matter { width: 150px; }
+.dispatch-table .col-dp-appr { width: 96px; }
+.dispatch-table .col-dp-op { width: 120px; }
+.dispatch-table td { word-break: break-word; }
+.dispatch-table tr.dp-row-own td { background: #f8faff; } /* 自己的申请淡蓝底标识 */
+.dp-appr-select {
+  padding: 4px 8px; font-size: 13px;
+  border: 1px solid #d9dce1; border-radius: 6px; background: #fff;
+}
+.dp-appr-text.dp-yes { color: #15803d; font-weight: 600; }
+.dp-appr-text.dp-no { color: #b3423a; font-weight: 600; }
+.stats-table .col-stats-user { width: 120px; }
+.stats-table .col-stats-month { min-width: 86px; }
+.stats-table td.num { text-align: center; }
+.stats-table td.stats-total { font-weight: 700; color: #4d6bfe; }
 
 /* 桌面应用缩放改用 WebView2 原生 ZoomFactor（main.rs setup 中 set_zoom(0.8)）：
    CSS zoom 挂根元素会破坏合成器滚动优化导致滚轮卡顿，已弃用；tauri-app 类保留备用 */
@@ -672,6 +718,34 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
   }
   #apps-content .stock-table td.col-apps-name-t::before { display: none; }
   #apps-content .stock-table td.col-apps-target { overflow-wrap: anywhere; }
+
+  /* 外派预约 → 卡片式（日期+申请人标题行 + 各字段行） */
+  #dispatch-content { overflow-x: hidden; }
+  #dispatch-content .stock-table { min-width: 100%; }
+  #dispatch-content .stock-table thead { display: none; }
+  #dispatch-content .stock-table, #dispatch-content .stock-table tbody { display: block; }
+  #dispatch-content .stock-table tr {
+    display: block; background: #fff;
+    border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 8px 10px; margin-bottom: 8px;
+  }
+  #dispatch-content .stock-table tr.dp-row-own td { background: transparent; }
+  #dispatch-content .stock-table td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    border-bottom: 1px dashed #f0f1f3; padding: 4px 0; text-align: left; width: auto;
+    min-width: 0; white-space: normal;
+  }
+  #dispatch-content .stock-table td:last-child { border-bottom: none; }
+  #dispatch-content .stock-table td::before {
+    content: attr(data-label); color: #8a8a8a; font-size: 12px; flex-shrink: 0; padding-top: 1px;
+  }
+  #dispatch-content .stock-table td.col-dp-date-t {
+    display: block; font-weight: 600; font-size: 15px;
+    border-bottom: 1px solid #eef0f2; padding-bottom: 7px; margin-bottom: 2px;
+  }
+  #dispatch-content .stock-table td.col-dp-date-t::before { display: none; }
+  #dispatch-content .stock-table td.col-dp-addr-t, #dispatch-content .stock-table td.col-dp-note-t { overflow-wrap: anywhere; }
+  #dispatch-content .stock-table td.col-dp-op { justify-content: flex-start; gap: 6px; }
 
   /* 触控与输入规格（16px 防 iOS 聚焦缩放） */
   .input-bar textarea { font-size: 16px; min-height: 42px; }
