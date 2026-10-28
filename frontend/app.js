@@ -2553,8 +2553,7 @@
     const tbody = el('tbody');
     items.forEach((it) => {
       const tr = el('tr');
-      const own = it.by === me;
-      if (own) tr.classList.add('dp-row-own');
+      const own = it.by === me; // 自己提交的：可修改/删除
       // 整行底色按批准状态：是=蓝底 / 否=红底 / 未批=无色（勾叉样式不变）
       if (it.approved === true) tr.classList.add('dp-row-yes');
       if (it.approved === false) tr.classList.add('dp-row-no');

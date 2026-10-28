@@ -556,8 +556,7 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .dispatch-table .col-dp-appr { width: 96px; }
 .dispatch-table .col-dp-op { width: 120px; }
 .dispatch-table td { word-break: break-word; }
-.dispatch-table tr.dp-row-own td { background: #f8faff; } /* 自己的申请淡蓝底标识 */
-/* 整行底色按批准状态（后写优先，盖过自己行的淡蓝）：是=蓝底 / 否=红底 / 未批=无色 */
+/* 整行底色只表达批准状态（是=蓝底 / 否=红底 / 未批=无色）；不再用淡蓝标自己的行 */
 .dispatch-table tr.dp-row-yes td { background: #eef2ff; }
 .dispatch-table tr.dp-row-no td { background: #fdf3f2; }
 .dp-appr-btns { display: inline-flex; gap: 4px; }
@@ -755,7 +754,6 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
     border: 1px solid #e5e7eb; border-radius: 12px;
     padding: 8px 10px; margin-bottom: 8px;
   }
-  #dispatch-content .stock-table tr.dp-row-own td { background: transparent; }
   #dispatch-content .stock-table td {
     display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
     border-bottom: 1px dashed #f0f1f3; padding: 4px 0; text-align: left; width: auto;
