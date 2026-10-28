@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-54（登录预取+切页缓存秒开）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-55（批准列三态按钮：绿✔红✘灰—）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2573,16 +2573,24 @@
       const tdAppr = el('td', 'col-dp-appr-t');
       tdAppr.dataset.label = '批准';
       if (d.canAdmin) {
-        const sel = el('select', 'dp-appr-select');
-        [['', '— 未批'], ['yes', '✔ 是'], ['no', '✘ 否']].forEach(([v, t2]) => { const o = el('option', '', t2); o.value = v; sel.appendChild(o); });
-        sel.value = it.approved === true ? 'yes' : (it.approved === false ? 'no' : '');
-        sel.onchange = async () => {
-          try {
-            await api('POST', '/api/dispatch-item', { action: 'approve', id: it.id, value: sel.value === 'yes' ? true : (sel.value === 'no' ? false : null) });
-            loadDispatch();
-          } catch (e) { alert(e.message); loadDispatch(); }
+        // 与普通用户展示同风格：绿✔ / 红✘ / 灰—，点按钮即设置（当前状态高亮，重复点不提交）
+        const btns = el('span', 'dp-appr-btns');
+        const mk = (val, label, cls) => {
+          const b = el('button', 'dp-appr-btn' + (it.approved === val ? ' ' + cls : ''), label);
+          b.title = val === true ? '批准为是' : (val === false ? '批准为否' : '重置为未批');
+          if (it.approved === val) b.disabled = true;
+          b.onclick = async () => {
+            try {
+              await api('POST', '/api/dispatch-item', { action: 'approve', id: it.id, value: val });
+              loadDispatch();
+            } catch (e) { alert(e.message); loadDispatch(); }
+          };
+          return b;
         };
-        tdAppr.appendChild(sel);
+        btns.appendChild(mk(true, '✔', 'dp-yes-btn'));
+        btns.appendChild(mk(false, '✘', 'dp-no-btn'));
+        btns.appendChild(mk(null, '—', 'dp-null-btn'));
+        tdAppr.appendChild(btns);
       } else {
         tdAppr.appendChild(el('span', 'dp-appr-text' + (it.approved === true ? ' dp-yes' : (it.approved === false ? ' dp-no' : '')), dpApprText(it.approved)));
       }

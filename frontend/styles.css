@@ -561,10 +561,17 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .dispatch-table tr.dp-row-pending td.col-dp-appr-t { color: #b3423a; font-weight: 600; }
 .dispatch-table tr.dp-row-pending td.col-dp-appr-t .dp-appr-text { color: #b3423a; }
 .dispatch-table tr.dp-row-own.dp-row-pending td { background: #fdf3f2; } /* 红色优先于淡蓝 */
-.dp-appr-select {
-  padding: 4px 8px; font-size: 13px;
-  border: 1px solid #d9dce1; border-radius: 6px; background: #fff;
+/* 批准列：admin 三态按钮（✔绿/✘红/—灰，当前状态高亮），普通用户为同色文字 */
+.dp-appr-btns { display: inline-flex; gap: 4px; }
+.dp-appr-btn {
+  min-width: 28px; padding: 2px 7px; font-size: 13px; line-height: 1.4;
+  border: 1px solid #d9dce1; border-radius: 6px; background: #fff; color: #8a8a8a; cursor: pointer;
 }
+.dp-appr-btn:hover { border-color: #4d6bfe; }
+.dp-appr-btn:disabled { cursor: default; }
+.dp-appr-btn.dp-yes-btn { color: #15803d; border-color: #15803d; font-weight: 700; background: #f0fdf4; }
+.dp-appr-btn.dp-no-btn { color: #b3423a; border-color: #b3423a; font-weight: 700; background: #fdf3f2; }
+.dp-appr-btn.dp-null-btn { color: #666; background: #f2f3f5; border-color: #d9dce1; }
 .dp-appr-text.dp-yes { color: #15803d; font-weight: 600; }
 .dp-appr-text.dp-no { color: #b3423a; font-weight: 600; }
 .stats-table th, .stats-table td { text-align: center; } /* 统计表全部居中 */
