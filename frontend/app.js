@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-53（统计表全列居中）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-54（登录预取+切页缓存秒开）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -183,7 +183,15 @@
     newChat();
     loadHistory();
     loadPrefs();
+    prefetchAll();
     $('#input').focus();
+  }
+
+  function prefetchAll() {
+    // 登录后后台并行预取各页数据（全部只读 GET）：配合各页“缓存秒开”，切换页面不再等“加载中”
+    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData].forEach((fn) => {
+      try { fn(); } catch (e) { /* 预取失败不打扰用户，切页时仍会正常加载 */ }
+    });
   }
 
   // 切换账号时必须清空的按用户缓存 + 回到报价页
@@ -1077,6 +1085,7 @@
 
   async function loadStock() {
     const box = $('#stock-content');
+    if (stockData) { renderStockPage(); refreshStock(); return; } // 缓存秒开 + 后台静默刷新
     box.innerHTML = '';
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
@@ -1087,6 +1096,10 @@
       return;
     }
     renderStockPage();
+  }
+
+  function refreshStock() {
+    api('GET', '/api/stock').then((d) => { stockData = d; renderStockPage(); }).catch(() => {});
   }
 
   function stockFiltered() {
@@ -1494,6 +1507,7 @@
 
   async function loadRecv() {
     const box = $('#recv-content');
+    if (recvData) { renderRecvPage(); refreshRecv(); return; } // 缓存秒开 + 后台静默刷新
     box.innerHTML = '';
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
@@ -1505,6 +1519,11 @@
       return;
     }
     renderRecvPage();
+  }
+
+  function refreshRecv() {
+    // 后台刷新：只更新数据重渲染，不清勾选状态
+    api('GET', '/api/receivables').then((d) => { recvData = d; renderRecvPage(); }).catch(() => {});
   }
 
   function fmtAmount(n) {
@@ -1846,6 +1865,7 @@
 
   async function loadFav() {
     const box = $('#fav-content');
+    if (favData) { renderFavPage(); refreshFav(); return; } // 缓存秒开 + 后台静默刷新
     box.innerHTML = '';
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
@@ -1855,6 +1875,10 @@
       box.innerHTML = '';
       box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
     }
+  }
+
+  function refreshFav() {
+    api('GET', '/api/bookmarks').then((d) => { favData = d; renderFavPage(); }).catch(() => {});
   }
 
   function renderFavPage() {
@@ -2077,6 +2101,7 @@
 
   async function loadInv() {
     const box = $('#inv-content');
+    if (invData) { renderInvPage(); refreshInv(); return; } // 缓存秒开 + 后台静默刷新
     box.innerHTML = '';
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
@@ -2087,6 +2112,10 @@
       return;
     }
     renderInvPage();
+  }
+
+  function refreshInv() {
+    api('GET', '/api/invoices').then((d) => { invData = d; renderInvPage(); }).catch(() => {});
   }
 
   function invFiltered() {
@@ -2199,6 +2228,7 @@
 
   async function loadApps() {
     const box = $('#apps-content');
+    if (appsData) { renderAppsPage(); refreshApps(); return; } // 缓存秒开 + 后台静默刷新
     box.innerHTML = '';
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
@@ -2208,6 +2238,10 @@
       box.innerHTML = '';
       box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
     }
+  }
+
+  function refreshApps() {
+    api('GET', '/api/app-favs').then((d) => { appsData = d; renderAppsPage(); }).catch(() => {});
   }
 
   function appKindLabel(t) { return /\.exe$/i.test(t) ? '本机应用' : (/\.lnk$/i.test(t) ? '快捷方式' : '应用链接'); }
@@ -2462,6 +2496,7 @@
 
   async function loadDispatch() {
     const box = $('#dispatch-content');
+    if (dispatchData) { renderDispatchPage(); refreshDispatch(); return; } // 缓存秒开 + 后台静默刷新
     box.innerHTML = '';
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
@@ -2471,6 +2506,10 @@
       box.innerHTML = '';
       box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
     }
+  }
+
+  function refreshDispatch() {
+    api('GET', '/api/dispatch').then((d) => { dispatchData = d; renderDispatchPage(); }).catch(() => {});
   }
 
   function dpApprText(v) { return v === true ? '✔ 是' : (v === false ? '✘ 否' : '— 未批'); }
@@ -2762,6 +2801,7 @@
 
   async function loadPriceData() {
     const box = $('#price-content');
+    if (priceData && priceData.length) { renderPricePage(); refreshPrice(); return; } // 缓存秒开 + 后台静默刷新
     box.innerHTML = '';
     box.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
@@ -2778,6 +2818,19 @@
       return;
     }
     renderPricePage();
+  }
+
+  function refreshPrice() {
+    // 后台刷新：只更新数据重渲染；进行中的改价/批量编辑不被动覆盖（priceEdit/priceBatch 存在时跳过重渲染）
+    api('GET', '/api/catalog').then((r) => {
+      priceData = r.machines || [];
+      priceTotal = r.totalSheet || [];
+      if (!priceTotalMode && !priceMachineId || !priceData.some((m) => m.id === priceMachineId)) {
+        const priced = priceData.find((m) => m.priced);
+        priceMachineId = priced ? priced.id : (priceData[0] && priceData[0].id);
+      }
+      if (!priceEdit && !priceBatch) renderPricePage();
+    }).catch(() => {});
   }
 
   function renderPricePage() {
