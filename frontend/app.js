@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-60（历史记录可删+预取秒开/按钮统一蓝色/宽弹窗）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-62（统计预取秒开；历史报价不预取）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -181,7 +181,7 @@
     // 模拟登录按需求与正常页面完全一致：不显示任何横幅/提示（退出=关闭该标签页，或重新正式登录）
     resetUserData(); // 清掉上一任用户留在内存里的页面数据（价格/库存/应收/历史），防止越权残留
     newChat();
-    loadHistory();
+    loadHistory(); // 历史报价体积大，按需求不参与并行预取（避免压力过大），仅在登录时正常加载
     loadPrefs();
     prefetchAll();
     $('#input').focus();
@@ -192,7 +192,19 @@
     [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, prefetchFavUsers].forEach((fn) => {
       try { fn(); } catch (e) { /* 预取失败不打扰用户，切页时仍会正常加载 */ }
     });
-    if (me && me.role === 'admin') refreshDispatchHistory(); // admin 预取历史记录缓存（打开秒渲染）
+    if (me && me.role === 'admin') {
+      refreshDispatchHistory(); // admin 预取历史记录缓存（打开秒渲染）
+      prefetchDispatchStats(); // admin 预取本月统计（打开秒渲染）
+    }
+  }
+
+  async function prefetchDispatchStats() {
+    // 预取默认区间（本月 1 日 ～ 今天）的统计，打开统计弹窗秒渲染
+    if (dispatchStatsCache) return;
+    const now = new Date();
+    const from = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+    const to = now.toLocaleDateString('sv-SE'); // 本地时区 YYYY-MM-DD
+    try { dispatchStatsCache = { from, to, data: await api('POST', '/api/dispatch-stats', { from, to }) }; } catch (e) { /* 失败时打开弹窗仍会正常加载 */ }
   }
 
   async function prefetchFavUsers() {
@@ -220,6 +232,7 @@
     appsData = null;
     dispatchData = null;
     dispatchHistory = null;
+    dispatchStatsCache = null;
     prefs = null;
     invData = null;
     $('#fav-content').innerHTML = '';
@@ -2828,36 +2841,53 @@
     renderDispatchHistoryBody(body);
   }
 
+  let dispatchStatsCache = null; // 统计缓存 { from, to, data }：预取后打开秒渲染
+
+  function renderDispatchStatsTable(zone, r, from, to) {
+    zone.innerHTML = '';
+    const rangeTxt = (from || to) ? ('统计范围：' + (from || '最早') + ' ～ ' + (to || '至今')) : '统计范围：全部历史申请';
+    zone.appendChild(el('div', 'modal-hint', rangeTxt + '（含已过期/已完成的申请）'));
+    const users = (r && r.users) || [];
+    if (!users.length) { zone.appendChild(el('div', 'modal-hint', '该时间范围内还没有任何外派申请记录')); return; }
+    const tbl = el('table', 'stock-table stats-table');
+    const trh = el('tr');
+    trh.appendChild(el('th', 'col-stats-user', '成员'));
+    trh.appendChild(el('th', '', '申请次数'));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    users.forEach((u) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', 'col-stats-user-t', u.user));
+      tr.appendChild(el('td', 'num stats-total', String(u.count || 0)));
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    zone.appendChild(tbl);
+  }
+
   async function renderDispatchStatsContent(zone, from, to) {
     zone.innerHTML = '';
     zone.appendChild(el('div', 'modal-hint', '统计中…'));
     try {
       const r = await api('POST', '/api/dispatch-stats', { from: from || '', to: to || '' });
-      zone.innerHTML = '';
-      const rangeTxt = (from || to) ? ('统计范围：' + (from || '最早') + ' ～ ' + (to || '至今')) : '统计范围：全部历史申请';
-      zone.appendChild(el('div', 'modal-hint', rangeTxt + '（含已过期/已完成的申请）'));
-      const users = r.users || [];
-      if (!users.length) { zone.appendChild(el('div', 'modal-hint', '该时间范围内还没有任何外派申请记录')); return; }
-      const tbl = el('table', 'stock-table stats-table');
-      const trh = el('tr');
-      trh.appendChild(el('th', 'col-stats-user', '成员'));
-      trh.appendChild(el('th', '', '申请次数'));
-      const thead = el('thead');
-      thead.appendChild(trh);
-      tbl.appendChild(thead);
-      const tbody = el('tbody');
-      users.forEach((u) => {
-        const tr = el('tr');
-        tr.appendChild(el('td', 'col-stats-user-t', u.user));
-        tr.appendChild(el('td', 'num stats-total', String(u.count || 0)));
-        tbody.appendChild(tr);
-      });
-      tbl.appendChild(tbody);
-      zone.appendChild(tbl);
+      dispatchStatsCache = { from: from || '', to: to || '', data: r };
+      renderDispatchStatsTable(zone, r, from, to);
     } catch (e) {
       zone.innerHTML = '';
       zone.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
     }
+  }
+
+  function refreshDispatchStats(zone, from, to) {
+    // 后台静默刷新统计缓存；仅当统计弹窗仍开着时重渲染
+    api('POST', '/api/dispatch-stats', { from: from || '', to: to || '' }).then((r) => {
+      dispatchStatsCache = { from: from || '', to: to || '', data: r };
+      if (!$('#modal-mask').classList.contains('hidden') && ($('#modal-title').textContent || '').indexOf('统计') !== -1) {
+        renderDispatchStatsTable(zone, r, from, to);
+      }
+    }).catch(() => {});
   }
 
   function openDispatchStatsModal() {
@@ -2887,7 +2917,12 @@
     };
     rangeRow.appendChild(bGo);
     body.appendChild(zone);
-    renderDispatchStatsContent(zone, inFrom.value, inTo.value);
+    if (dispatchStatsCache && dispatchStatsCache.from === inFrom.value && dispatchStatsCache.to === inTo.value) {
+      renderDispatchStatsTable(zone, dispatchStatsCache.data, inFrom.value, inTo.value); // 预取缓存秒开
+      refreshDispatchStats(zone, inFrom.value, inTo.value); // 后台静默刷新
+    } else {
+      renderDispatchStatsContent(zone, inFrom.value, inTo.value);
+    }
   }
 
   let priceEdit = null; // 价格表改价进行中 {name, value}
