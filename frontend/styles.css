@@ -206,7 +206,7 @@ input, textarea { font-family: inherit; outline: none; }
   background: #fff; border-radius: 14px;
   display: flex; flex-direction: column; overflow: hidden;
 }
-.modal-box.modal-wide { width: min(1100px, 96vw); } /* 账号管理/历史记录等宽弹窗 */
+.modal-box.modal-wide { width: min(1240px, 96vw); } /* 账号管理/历史记录等宽弹窗 */
 .modal-head {
   display: flex; justify-content: space-between; align-items: center;
   padding: 14px 18px; border-bottom: 1px solid #eef0f2;
@@ -576,7 +576,9 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* 全部历史记录弹窗（宽弹窗内的紧凑存档表） */
 .history-table { font-size: 13px; }
 .history-table th, .history-table td { padding: 5px 8px; white-space: nowrap; }
-.history-table td.col-dp-addr-t, .history-table td.col-dp-note-t { white-space: normal; min-width: 140px; }
+.history-table td.col-dp-addr-t { white-space: normal; min-width: 140px; }
+.history-table .col-dp-note { width: 280px; } /* 弹窗加宽的增量给备注列，长备注可完整显示 */
+.history-table td.col-dp-note-t { white-space: normal; min-width: 240px; }
 .stats-table .col-stats-month { min-width: 86px; }
 .stats-table td.num { text-align: center; }
 .stats-table td.stats-total { font-weight: 700; color: #4d6bfe; }
