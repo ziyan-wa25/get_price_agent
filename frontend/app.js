@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-59（admin 全部历史外派记录）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-60（历史记录可删+预取秒开/按钮统一蓝色/宽弹窗）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -189,9 +189,19 @@
 
   function prefetchAll() {
     // 登录后后台并行预取各页数据（全部只读 GET）：配合各页“缓存秒开”，切换页面不再等“加载中”
-    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData].forEach((fn) => {
+    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, prefetchFavUsers].forEach((fn) => {
       try { fn(); } catch (e) { /* 预取失败不打扰用户，切页时仍会正常加载 */ }
     });
+    if (me && me.role === 'admin') refreshDispatchHistory(); // admin 预取历史记录缓存（打开秒渲染）
+  }
+
+  async function prefetchFavUsers() {
+    // 预取成员名单（网页收藏夹/外派可见性弹窗共用），打开弹窗不再等“加载成员列表中…”
+    if (favUsers) return;
+    try {
+      const ur = await api('GET', '/api/users');
+      favUsers = (ur.users || []).map((u) => ({ username: u.username, role: u.role }));
+    } catch (e) { /* 失败时弹窗内仍会重试 */ }
   }
 
   // 切换账号时必须清空的按用户缓存 + 回到报价页
@@ -209,6 +219,7 @@
     favUsers = null;
     appsData = null;
     dispatchData = null;
+    dispatchHistory = null;
     prefs = null;
     invData = null;
     $('#fav-content').innerHTML = '';
@@ -2529,12 +2540,12 @@
       bStats.onclick = openDispatchStatsModal;
       bar.appendChild(bStats);
       const nVis = (d.visList || []).length;
-      const bVis = el('button', 'fav-vis-btn', '👥 客户/地址可见性：' + (nVis ? nVis + ' 人可见' : '所有人可见'));
+      const bVis = el('button', 'primary', '👥 客户/地址可见性：' + (nVis ? nVis + ' 人可见' : '所有人可见'));
       bVis.title = '统一设置所有外派申请「客户名称/详细地址」对哪些成员可见（名单外显示 *******）';
       bVis.onclick = () => openDispatchVisModal(bVis);
       bar.appendChild(bVis);
-      const bHist = el('button', 'fav-vis-btn', '📜 全部历史记录');
-      bHist.title = '查看所有外派申请（含已过期自动消失的），按日期从近到远';
+      const bHist = el('button', 'primary', '📜 全部历史记录');
+      bHist.title = '查看所有外派申请（含已过期自动消失的），按日期从近到远；可删除单条';
       bHist.onclick = openDispatchHistoryModal;
       bar.appendChild(bHist);
     }
@@ -2632,7 +2643,7 @@
     const body = $('#modal-body');
     body.appendChild(el('div', 'modal-hint', existing
       ? '内容一旦修改，批准状态将重置为「未批」，需管理员重新批准。'
-      : '申请人默认为当前账号；提交后由管理员批准。客户名称/详细地址默认所有人可见，管理员可按行设置可见名单。'));
+      : '申请人默认为当前账号；提交后由管理员批准。客户名称/详细地址默认所有人可见，管理员可在工具栏统一设置可见名单。'));
     const grid = el('div', 'recv-edit-grid');
     body.appendChild(grid);
     const mk = (labelText, input, wide) => {
@@ -2743,43 +2754,78 @@
     };
   }
 
+  let dispatchHistory = null; // 历史记录缓存：预取后打开秒渲染
+
+  async function refreshDispatchHistory() {
+    // 后台静默刷新历史缓存；若历史弹窗正开着则同步重渲染
+    try {
+      dispatchHistory = await api('GET', '/api/dispatch-history');
+      if (!$('#modal-mask').classList.contains('hidden') && ($('#modal-title').textContent || '').indexOf('历史') !== -1) {
+        const body = $('#modal-body');
+        body.innerHTML = '';
+        renderDispatchHistoryBody(body);
+      }
+    } catch (e) { /* 静默 */ }
+  }
+
+  function renderDispatchHistoryBody(body) {
+    const items = (dispatchHistory && dispatchHistory.items) || [];
+    if (!items.length) { body.appendChild(el('div', 'modal-hint', '还没有任何外派申请记录')); return; }
+    const tbl = el('table', 'stock-table dispatch-table history-table');
+    const trh = el('tr');
+    [['col-dp-date', '日期'], ['col-dp-by', '申请人'], ['col-dp-client', '客户名称'], ['col-dp-addr', '详细地址'], ['col-dp-matter', '事宜'], ['col-dp-note', '备注'], ['col-dp-appr', '批准'], ['col-dp-op', '操作']].forEach(([c, t]) => trh.appendChild(el('th', c, t)));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    items.forEach((it) => {
+      const tr = el('tr');
+      if (it.approved === true) tr.classList.add('dp-row-yes');
+      if (it.approved === false) tr.classList.add('dp-row-no');
+      const mk = (cls, text, label) => { const td = el('td', cls); td.dataset.label = label; td.textContent = text; td.title = text; tr.appendChild(td); };
+      mk('col-dp-date-t', it.date, '日期');
+      mk('col-dp-by-t', it.by, '申请人');
+      mk('col-dp-client-t', it.clientName || '', '客户名称');
+      mk('col-dp-addr-t', it.address || '', '详细地址');
+      mk('col-dp-matter-t', it.matter || '', '事宜');
+      mk('col-dp-note-t', it.note || '', '备注');
+      mk('col-dp-appr-t', dpApprText(it.approved), '批准');
+      const tdOp = el('td', 'col-dp-op');
+      tdOp.dataset.label = '操作';
+      const bDel = el('button', 'fav-del', '🗑');
+      bDel.title = '删除这条申请（含已过期的），删除后不可恢复';
+      bDel.onclick = async () => {
+        if (!confirm('删除「' + it.by + '」在 ' + it.date + ' 的外派申请？删除后不可恢复。')) return;
+        try {
+          await api('POST', '/api/dispatch-item', { action: 'delete', id: it.id });
+          await refreshDispatchHistory(); // 重新拉取并重渲染本弹窗
+          loadDispatch(); // 若删的是未过期条目，主列表同步
+        } catch (e) { alert(e.message); }
+      };
+      tdOp.appendChild(bDel);
+      tr.appendChild(tdOp);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    body.appendChild(tbl);
+  }
+
   async function openDispatchHistoryModal() {
     openModal('全部外派历史记录（含已过期，倒序）', true);
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '所有外派申请的只读存档（含已过期从列表自动消失的），按日期从近到远排列。'));
+    body.appendChild(el('div', 'modal-hint', '所有外派申请的存档（含已过期从列表自动消失的），按日期从近到远排列；可删除单条。'));
+    if (dispatchHistory) { renderDispatchHistoryBody(body); refreshDispatchHistory(); return; } // 预取缓存秒开
     body.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
-      const r = await api('GET', '/api/dispatch-history');
-      body.innerHTML = '';
-      const items = r.items || [];
-      if (!items.length) { body.appendChild(el('div', 'modal-hint', '还没有任何外派申请记录')); return; }
-      const tbl = el('table', 'stock-table dispatch-table history-table');
-      const trh = el('tr');
-      [['col-dp-date', '日期'], ['col-dp-by', '申请人'], ['col-dp-client', '客户名称'], ['col-dp-addr', '详细地址'], ['col-dp-matter', '事宜'], ['col-dp-note', '备注'], ['col-dp-appr', '批准']].forEach(([c, t]) => trh.appendChild(el('th', c, t)));
-      const thead = el('thead');
-      thead.appendChild(trh);
-      tbl.appendChild(thead);
-      const tbody = el('tbody');
-      items.forEach((it) => {
-        const tr = el('tr');
-        if (it.approved === true) tr.classList.add('dp-row-yes');
-        if (it.approved === false) tr.classList.add('dp-row-no');
-        const mk = (cls, text, label) => { const td = el('td', cls); td.dataset.label = label; td.textContent = text; td.title = text; tr.appendChild(td); };
-        mk('col-dp-date-t', it.date, '日期');
-        mk('col-dp-by-t', it.by, '申请人');
-        mk('col-dp-client-t', it.clientName || '', '客户名称');
-        mk('col-dp-addr-t', it.address || '', '详细地址');
-        mk('col-dp-matter-t', it.matter || '', '事宜');
-        mk('col-dp-note-t', it.note || '', '备注');
-        mk('col-dp-appr-t', dpApprText(it.approved), '批准');
-        tbody.appendChild(tr);
-      });
-      tbl.appendChild(tbody);
-      body.appendChild(tbl);
+      dispatchHistory = await api('GET', '/api/dispatch-history');
     } catch (e) {
       body.innerHTML = '';
       body.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+      return;
     }
+    body.innerHTML = '';
+    body.appendChild(el('div', 'modal-hint', '所有外派申请的存档（含已过期从列表自动消失的），按日期从近到远排列；可删除单条。'));
+    renderDispatchHistoryBody(body);
   }
 
   async function renderDispatchStatsContent(zone, from, to) {
