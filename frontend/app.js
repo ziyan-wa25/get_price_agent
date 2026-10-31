@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-57（行底色按批准状态：是蓝/否红/未批无色）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-59（admin 全部历史外派记录）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2533,6 +2533,10 @@
       bVis.title = '统一设置所有外派申请「客户名称/详细地址」对哪些成员可见（名单外显示 *******）';
       bVis.onclick = () => openDispatchVisModal(bVis);
       bar.appendChild(bVis);
+      const bHist = el('button', 'fav-vis-btn', '📜 全部历史记录');
+      bHist.title = '查看所有外派申请（含已过期自动消失的），按日期从近到远';
+      bHist.onclick = openDispatchHistoryModal;
+      bar.appendChild(bHist);
     }
     box.innerHTML = '';
     box.appendChild(bar);
@@ -2739,6 +2743,45 @@
     };
   }
 
+  async function openDispatchHistoryModal() {
+    openModal('全部外派历史记录（含已过期，倒序）', true);
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '所有外派申请的只读存档（含已过期从列表自动消失的），按日期从近到远排列。'));
+    body.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      const r = await api('GET', '/api/dispatch-history');
+      body.innerHTML = '';
+      const items = r.items || [];
+      if (!items.length) { body.appendChild(el('div', 'modal-hint', '还没有任何外派申请记录')); return; }
+      const tbl = el('table', 'stock-table dispatch-table history-table');
+      const trh = el('tr');
+      [['col-dp-date', '日期'], ['col-dp-by', '申请人'], ['col-dp-client', '客户名称'], ['col-dp-addr', '详细地址'], ['col-dp-matter', '事宜'], ['col-dp-note', '备注'], ['col-dp-appr', '批准']].forEach(([c, t]) => trh.appendChild(el('th', c, t)));
+      const thead = el('thead');
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+      const tbody = el('tbody');
+      items.forEach((it) => {
+        const tr = el('tr');
+        if (it.approved === true) tr.classList.add('dp-row-yes');
+        if (it.approved === false) tr.classList.add('dp-row-no');
+        const mk = (cls, text, label) => { const td = el('td', cls); td.dataset.label = label; td.textContent = text; td.title = text; tr.appendChild(td); };
+        mk('col-dp-date-t', it.date, '日期');
+        mk('col-dp-by-t', it.by, '申请人');
+        mk('col-dp-client-t', it.clientName || '', '客户名称');
+        mk('col-dp-addr-t', it.address || '', '详细地址');
+        mk('col-dp-matter-t', it.matter || '', '事宜');
+        mk('col-dp-note-t', it.note || '', '备注');
+        mk('col-dp-appr-t', dpApprText(it.approved), '批准');
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      body.appendChild(tbl);
+    } catch (e) {
+      body.innerHTML = '';
+      body.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
   async function renderDispatchStatsContent(zone, from, to) {
     zone.innerHTML = '';
     zone.appendChild(el('div', 'modal-hint', '统计中…'));
@@ -2772,8 +2815,7 @@
   }
 
   function openDispatchStatsModal() {
-    openModal('外派申请次数统计');
-    const body = $('#modal-body');
+    openModal('外派申请次数统计');    const body = $('#modal-body');
     const rangeRow = el('div', 'stats-range');
     body.appendChild(rangeRow);
     const mkDate = (labelText, value) => {
