@@ -577,6 +577,9 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .history-table { font-size: 13px; }
 .history-table th, .history-table td { padding: 5px 8px; white-space: nowrap; }
 .history-table td.col-dp-addr-t { white-space: normal; min-width: 140px; }
+/* 退出模拟按钮（模拟登录时左下角显示，醒目警示色） */
+.side-btn-warn { color: #b3423a; border-color: #e4b6b1; font-weight: 600; }
+.side-btn-warn:hover { background: #fdf3f2; border-color: #b3423a; }
 .history-table .col-dp-note { width: 280px; } /* 弹窗加宽的增量给备注列，长备注可完整显示 */
 .history-table td.col-dp-note-t { white-space: normal; min-width: 240px; }
 .stats-table .col-stats-month { min-width: 86px; }

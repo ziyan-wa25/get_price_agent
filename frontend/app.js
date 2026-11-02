@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-63（网页收藏夹允许0人勾选=仅管理员可见）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-64（外派申请/审批信息栏；桌面收藏夹走系统默认浏览器；模拟登录桌面适配+退出模拟）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -178,7 +178,8 @@
     } else {
       $('#btn-admin').classList.add('hidden');
     }
-    // 模拟登录按需求与正常页面完全一致：不显示任何横幅/提示（退出=关闭该标签页，或重新正式登录）
+    // 模拟登录按需求与正常页面完全一致：不显示任何横幅/提示；桌面端用左下角「退出模拟」返回 admin
+    $('#btn-exit-imp').classList.toggle('hidden', !impToken);
     resetUserData(); // 清掉上一任用户留在内存里的页面数据（价格/库存/应收/历史），防止越权残留
     newChat();
     loadHistory(); // 历史报价体积大，按需求不参与并行预取（避免压力过大），仅在登录时正常加载
@@ -2246,7 +2247,11 @@
   // 统一打开入口：桌面版走 Rust（浏览器/启动应用）；网页版 http(s) 新标签、协议链接交给系统
   function openAppTarget(target) {
     const t = String(target || '');
-    if (isTauriApp) return tauriInvoke('open_target', { target: t });
+    if (isTauriApp) {
+      // http(s)/自定义协议一律走系统 opener（默认浏览器或对应应用），不再经 explorer（会误开资源管理器）
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/i.test(t)) return tauriInvoke('plugin:opener|open_url', { path: t });
+      return tauriInvoke('open_target', { target: t }); // exe/lnk 仍走 open_target 启动本机程序
+    }
     if (/^https?:\/\//i.test(t)) { window.open(t, '_blank', 'noopener'); return Promise.resolve(); }
     const a = document.createElement('a'); // 协议链接（weixin:// 等）：浏览器自行处理，可能弹确认框
     a.href = t; a.style.display = 'none';
@@ -2547,6 +2552,9 @@
     const box = $('#dispatch-content');
     const info = $('#dispatch-info');
     info.innerHTML = '';
+    const fmtDT = (t) => { try { return new Date(t).toLocaleString('zh-CN'); } catch (e) { return ''; } };
+    if (d.lastApply) info.appendChild(el('span', 'stock-import-time', '最近一次申请：' + fmtDT(d.lastApply.at) + '（' + d.lastApply.by + '）'));
+    if (d.lastApprove) info.appendChild(el('span', 'stock-import-time', '最近一次审批：' + fmtDT(d.lastApprove.at) + '（' + (d.lastApprove.by || 'admin') + '）'));
     const d = dispatchData || { items: [], me: '', canAdmin: false };
     const me = d.me || '';
     const bar = el('div', 'stock-toolbar');
@@ -3923,12 +3931,13 @@
           row.appendChild(rst);
           if (!isSelf) {
             const imp = el('button', 'u-del', '👁 模拟登录');
-            imp.title = '在新标签页以该账号的身份查看系统（对方无需退出，也不影响其密码与数据）';
+            imp.title = '以该账号的身份查看系统（网页版新标签页；桌面版当前窗口打开，可用左下角「退出模拟」返回）';
             imp.onclick = async () => {
-              if (!confirm('以「' + u.username + '」的身份打开一个新的查看页面？')) return;
+              if (!confirm('以「' + u.username + '」的身份打开查看页面？')) return;
               try {
                 const r2 = await api('POST', '/api/users-impersonate', { username: u.username });
-                window.open(location.pathname + '?imp=' + encodeURIComponent(r2.token), '_blank');
+                if (isTauriApp) { location.href = location.pathname + '?imp=' + encodeURIComponent(r2.token); } // 桌面单窗口：原地跳转
+                else { window.open(location.pathname + '?imp=' + encodeURIComponent(r2.token), '_blank'); }
               } catch (e) { alert(e.message); }
             };
             row.appendChild(imp);
@@ -4038,6 +4047,10 @@
   $('#btn-dispatch').onclick = () => showPage('dispatch');
   $('#dispatch-search').oninput = () => renderDispatchPage();
   $('#btn-settings').onclick = () => openSettingsModal();
+  $('#btn-exit-imp').onclick = () => {
+    try { sessionStorage.removeItem('qa_imp_token'); } catch (e) {}
+    location.reload(); // 回到本窗口自己的登录态（admin 的 token 一直在 localStorage，无需重新输密码）
+  };
   $('#stock-search').oninput = () => renderStockPage();
   $('#inv-search').oninput = () => renderInvPage();
   $('#btn-logout').onclick = () => doLogout(false);
