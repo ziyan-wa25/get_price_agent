@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-62（统计预取秒开；历史报价不预取）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-63（网页收藏夹允许0人勾选=仅管理员可见）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2024,7 +2024,11 @@
 
   // 收藏夹可见人员：visibleTo 空数组/未设置 = 所有人可见
   function favIsPublic(b) { return !Array.isArray(b.visibleTo) || !b.visibleTo.length; }
-  function favVisLabel(b) { return favIsPublic(b) ? '👥 所有人' : '👥 可见 ' + b.visibleTo.length + ' 人'; }
+  function favVisLabel(b) {
+    if (favIsPublic(b)) return '👥 所有人';
+    if (Array.isArray(b.visibleTo) && b.visibleTo.length === 1 && b.visibleTo[0] === me.username) return '👥 仅管理员';
+    return '👥 可见 ' + b.visibleTo.length + ' 人';
+  }
 
   // 可见人员弹窗（类似历史报价弹窗）：点「保存」统一提交，「取消」不改动
   async function openFavVisModal(b, visBtn) {
@@ -2039,7 +2043,7 @@
       if ($('#modal-title').textContent.indexOf('可见人员') === -1) return; // 弹窗已被关闭
       body.innerHTML = '';
     }
-    body.appendChild(el('div', 'modal-hint', '勾选哪些成员可以看到这条收藏。勾选「所有成员」即所有人可见；名单外的成员将看不到该条。'));
+    body.appendChild(el('div', 'modal-hint', '勾选哪些成员可以看到这条收藏；勾选「所有成员」= 所有人可见。一个都不勾直接保存 = 仅管理员可见（其他成员完全看不到这条）。'));
     // 工作副本：在弹窗里勾选只改本地副本，点「保存」才提交
     const sel = new Set(favIsPublic(b) ? (favUsers || []).map((u) => u.username) : (b.visibleTo || []));
     const publicRow = el('label', 'fav-vis-item fav-vis-all');
@@ -2077,9 +2081,10 @@
     foot.appendChild(bCancel);
     body.appendChild(foot);
     bOk.onclick = async () => {
-      if (!sel.size) { alert('至少保留一名成员可见；或勾选「所有成员」'); return; }
-      const all = members.length > 0 && members.every((x) => sel.has(x.username));
-      const vis = all ? [] : members.filter((x) => sel.has(x.username)).map((x) => x.username);
+      const all = members.length === 0 || members.every((x) => sel.has(x.username));
+      const list = members.filter((x) => sel.has(x.username)).map((x) => x.username);
+      // 全选=所有人可见；部分勾选=名单内可见；全不勾=仅管理员可见（名单放 admin 自己）
+      const vis = all ? [] : (list.length ? list : [me.username]);
       bOk.disabled = true;
       try {
         const r = await api('POST', '/api/bookmarks-item', { action: 'visibility', id: b.id, visibleTo: vis });
