@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-64（外派申请/审批信息栏；桌面收藏夹走系统默认浏览器；模拟登录桌面适配+退出模拟）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-65（修复外派页信息栏 d 未初始化报错）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2552,10 +2552,10 @@
     const box = $('#dispatch-content');
     const info = $('#dispatch-info');
     info.innerHTML = '';
+    const d = dispatchData || { items: [], me: '', canAdmin: false };
     const fmtDT = (t) => { try { return new Date(t).toLocaleString('zh-CN'); } catch (e) { return ''; } };
     if (d.lastApply) info.appendChild(el('span', 'stock-import-time', '最近一次申请：' + fmtDT(d.lastApply.at) + '（' + d.lastApply.by + '）'));
     if (d.lastApprove) info.appendChild(el('span', 'stock-import-time', '最近一次审批：' + fmtDT(d.lastApprove.at) + '（' + (d.lastApprove.by || 'admin') + '）'));
-    const d = dispatchData || { items: [], me: '', canAdmin: false };
     const me = d.me || '';
     const bar = el('div', 'stock-toolbar');
     const bAdd = el('button', 'primary', '＋ 新增申请');
