@@ -1,10 +1,13 @@
-// 报价系统 PWA Service Worker v1
-// 策略（v1 从简可靠）：
+// 报价系统 PWA Service Worker
+// 缓存策略：
 // - API（含 /api/ 的请求）与跨域请求（腾讯云 SCF）：一律直连，绝不缓存——登录态与库存/报价/应收/进项数据必须实时
 // - 其余同源 GET（页面导航 + 静态文件）：network-first——在线时拿最新版并顺带刷新缓存，断网时回退到缓存的界面壳
 // - 升级方式：改下方 CACHE 名称发布新版 SW，activate 时自动淘汰全部旧缓存
-const CACHE = 'xch-quote-pwa-v1';
-const SHELL = ['./', './index.html', './app.js', './styles.css', './config.js', './manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'xch-quote-pwa-v2';
+const SHELL = [
+  './', './index.html', './app.js?v=20261111-login', './styles.css?v=20261111-login',
+  './config.js?v=2026061966', './manifest.json', './icon-192.png', './icon-512.png',
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

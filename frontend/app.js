@@ -100,13 +100,30 @@
   }
 
   // ---------- 登录 / 登出 ----------
+  function setLoginPasswordVisible(visible) {
+    $('#login-pass').type = visible ? 'text' : 'password';
+    const toggle = $('#login-pass-toggle');
+    const label = visible ? '隐藏密码' : '显示密码';
+    toggle.dataset.visible = String(visible);
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
+  }
+
   async function doLogin() {
+    const btn = $('#login-btn');
+    if (btn.disabled) return;
     const u = $('#login-user').value.trim();
     const p = $('#login-pass').value;
-    if (!u || !p) { $('#login-err').textContent = '请输入账号和密码'; return; }
+    if (!u || !p) {
+      $('#login-err').textContent = '请输入账号和密码';
+      $(u ? '#login-pass' : '#login-user').focus();
+      return;
+    }
     $('#login-err').textContent = '';
-    const btn = $('#login-btn');
+    setLoginPasswordVisible(false);
     btn.disabled = true;
+    $('#login-btn-label').textContent = '正在登录…';
+    $('#login-pass-toggle').disabled = true;
     try {
       const r = await api('POST', '/api/login', { username: u, password: p });
       token = r.token;
@@ -121,6 +138,8 @@
       $('#login-err').textContent = e.message;
     } finally {
       btn.disabled = false;
+      $('#login-btn-label').textContent = '登录';
+      $('#login-pass-toggle').disabled = false;
     }
   }
 
@@ -163,6 +182,7 @@
     $('#app-view').classList.add('hidden');
     $('#login-view').classList.remove('hidden');
     $('#login-pass').value = '';
+    setLoginPasswordVisible(false);
     if (expired) $('#login-err').textContent = '登录已失效，请重新登录';
   }
 
@@ -4028,9 +4048,8 @@
   }
 
   // ---------- 事件绑定 ----------
-  $('#login-btn').onclick = doLogin;
-  $('#login-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
-  $('#login-user').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+  $('#login-form').onsubmit = (e) => { e.preventDefault(); doLogin(); };
+  $('#login-pass-toggle').onclick = () => setLoginPasswordVisible($('#login-pass').type === 'password');
   $('#send').onclick = send;
   $('#new-chat').onclick = () => {
     // 在其他页面时第一次点击 = 回到上次报价的界面；已经在报价页再点一次才真正新建

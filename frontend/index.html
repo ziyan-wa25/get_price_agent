@@ -9,23 +9,46 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=2026061966">
+  <link rel="stylesheet" href="styles.css?v=20261111-login">
 </head>
 
 <body>
 
   <!-- 登录 -->
-  <div id="login-view" class="login-wrap hidden">
-    <div class="login-card">
-      <div class="login-logo">🛠️</div>
-      <h1>鑫潮海办公系统</h1>
-      <p class="login-sub">浪潮服务器智能办公</p>
-      <input id="login-user" autocomplete="username" placeholder="账号">
-      <input id="login-pass" type="password" autocomplete="current-password" placeholder="密码">
-      <button id="login-btn">登 录</button>
-      <div id="login-err" class="err"></div>
-    </div>
-  </div>
+  <main id="login-view" class="login-wrap hidden">
+    <section class="login-card" aria-labelledby="login-title">
+      <header class="login-heading">
+        <img class="login-mark" src="icon-192.png" alt="" width="51" height="51">
+        <h1 id="login-title">鑫潮海办公系统</h1>
+        <p>登录工作台</p>
+      </header>
+      <form id="login-form" class="login-form" method="post" novalidate>
+        <div class="login-field">
+          <label for="login-user">账号</label>
+          <div class="login-input">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+            <input id="login-user" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="请输入账号" required>
+          </div>
+        </div>
+        <div class="login-field">
+          <label for="login-pass">密码</label>
+          <div class="login-input">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4M12 15v3"/></svg>
+            <input id="login-pass" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+            <button id="login-pass-toggle" class="login-pass-toggle" type="button" aria-label="显示密码" title="显示密码" aria-controls="login-pass">
+              <svg class="login-eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="login-eye-closed" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1c.5-.1.9-.1 1.4-.1 6.4 0 10 7 10 7a13.6 13.6 0 0 1-2.5 3.3M6.1 6.1A15 15 0 0 0 2 12s3.6 7 10 7c1.9 0 3.6-.6 5-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+            </button>
+          </div>
+        </div>
+        <p id="login-err" class="login-error" role="alert"></p>
+        <button id="login-btn" class="login-submit" type="submit">
+          <span id="login-btn-label">登录</span>
+          <svg class="login-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+        </button>
+      </form>
+    </section>
+  </main>
 
   <!-- 主界面 -->
   <div id="app-view" class="app hidden">
@@ -141,11 +164,11 @@
   </div>
 
   <script src="config.js?v=2026061966"></script>
-  <script src="app.js?v=2026061966"></script>
+  <script src="app.js?v=20261111-login"></script>
   <script>
     // PWA：注册 Service Worker（仅 https 或 localhost 生效；用 file:// 本地打开时自动跳过，不影响任何现有功能）
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
-      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=2026061966').catch(function () {}); });
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=20261111-login').catch(function () {}); });
     }
   </script>
 </body>
