@@ -675,6 +675,29 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* 退出模拟按钮（模拟登录时左下角显示，醒目警示色） */
 .side-btn-warn { color: #b3423a; border-color: #e4b6b1; font-weight: 600; }
 .side-btn-warn:hover { background: #fdf3f2; border-color: #b3423a; }
+/* 库存表：序号列（极窄，占用货品名称空间）/ admin 修改 24h 红字 / 合计行 */
+.col-seq { width: 34px; min-width: 34px; color: #8a93a6; font-size: 12px; }
+.stock-mod-red { color: #c0392b !important; font-weight: 600; }
+.stock-total-row td { background: #f4f6fb; font-weight: 700; }
+/* 业绩报表 */
+.perf-block { margin-bottom: 20px; }
+.perf-block-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; }
+.perf-block-title { font-weight: 700; font-size: 14px; }
+.perf-table th, .perf-table td { text-align: center; white-space: nowrap; padding: 7px 12px; }
+.perf-quarter-row td { background: #fff7e6; font-weight: 700; }
+/* 无库存产品统计弹窗 */
+.nostock-table .edit-input { width: 110px; }
+.nostock-table td:first-child .edit-input { width: 170px; }
+/* 代办事项 */
+.todo-done-row td { color: #8a93a6; text-decoration: line-through; }
+.todo-table th:nth-child(n + 2), .todo-table td:nth-child(n + 2) { white-space: nowrap; width: 170px; }
+/* 款项统计 */
+.pay-select { width: 110px; padding: 4px 6px; border: 1px solid #4d6bfe; border-radius: 6px; font-size: 13px; background: #fff; }
+.pay-table th, .pay-table td { white-space: nowrap; }
+/* 设置：侧栏排序 */
+.order-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.order-row span { flex: 1; }
+.mini-btn { padding: 2px 10px; font-size: 13px; }
 .history-table .col-dp-note { width: 280px; } /* 弹窗加宽的增量给备注列，长备注可完整显示 */
 .history-table td.col-dp-note-t { white-space: normal; min-width: 240px; }
 .stats-table .col-stats-month { min-width: 86px; }

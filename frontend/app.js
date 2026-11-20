@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-66（外派信息栏常驻显示+后端回算最近申请/审批）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-67（业绩报表/无库存统计/库存合计与24h红字/序号列/库存量排序/代办事项/款项统计/侧栏排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -210,7 +210,7 @@
 
   function prefetchAll() {
     // 登录后后台并行预取各页数据（全部只读 GET）：配合各页“缓存秒开”，切换页面不再等“加载中”
-    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, prefetchFavUsers].forEach((fn) => {
+    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, loadPerf, loadTodos, loadPayments, prefetchFavUsers].forEach((fn) => {
       try { fn(); } catch (e) { /* 预取失败不打扰用户，切页时仍会正常加载 */ }
     });
     if (me && me.role === 'admin') {
@@ -254,6 +254,11 @@
     dispatchData = null;
     dispatchHistory = null;
     dispatchStatsCache = null;
+    perfData = null;
+    noStockData = null;
+    todoData = null;
+    payData = null;
+    stockQtySort = null;
     prefs = null;
     invData = null;
     $('#fav-content').innerHTML = '';
@@ -1124,6 +1129,7 @@
   const ROLE_LABELS = { admin: '管理员', user: '普通用户', uploader: '库存上传员', exporter: '库存导出员', referrer: '参考者' };
   let stockData = null;      // GET /api/stock 结果：{items, lastImportAt, lastImportBy, lastPriceChangeAt, lastPriceChangeBy, canSeePrice, canImport, canExport, canEdit}
   let stockBatchMode = null; // null | 'edit'（admin：整行改+标记删除） | 'wh'（库存导出员：仅改备注库房）
+  let stockQtySort = null;   // null | 'desc' | 'asc'：点击「库存量」表头切换排序（仅普通浏览模式）
   let stockEdits = {};       // 批量修改进行中的整行副本 {原始货品名称: {name, qty, cost, price, note, wh}}
   let stockDelSel = new Set(); // 批量删除勾选
   let stockWhEdits = {};     // 导出员的库房备注编辑副本 {原始货品名称: 新wh}
@@ -1228,6 +1234,10 @@
         bExport.onclick = exportStockExcel;
         bar.appendChild(bExport);
       }
+      const bNs = el('button', 'primary', '📋 无库存产品统计');
+      bNs.title = '查看/维护无库存产品统计（修改权限由管理员在设置中指定）';
+      bNs.onclick = openNoStockModal;
+      bar.appendChild(bNs);
     }
     if (bar.children.length) box.appendChild(bar);
 
@@ -1241,9 +1251,20 @@
       box.appendChild(fi);
     }
 
-    const items = stockFiltered();
+    const plainView = stockBatchMode === null;
+    let items = stockFiltered();
+    // 库存量点击排序（仅普通浏览模式）：点一次倒序，再点一次正序
+    if (plainView && stockQtySort) {
+      items = [...items].sort((a, b) => {
+        const x = Number(a.qty) || 0;
+        const y = Number(b.qty) || 0;
+        return stockQtySort === 'desc' ? y - x : x - y;
+      });
+    }
     // 成本价仅 admin 可见；售价 admin 和普通用户可见；库存上传员/导出员两者都不可见（服务端不下发字段）
-    const heads = ['货品名称', '库存量'];
+    const heads = [];
+    if (plainView) heads.push('序号'); // 极窄序号列：顺序向下排序，占货品名称的行空间
+    heads.push('货品名称', '库存量');
     if (stockData.canSeeCost) heads.push('成本价');
     if (stockData.canSeePrice) heads.push('售价');
     heads.push('备注');
@@ -1255,7 +1276,15 @@
       if (h === '货品名称') cls = 'col-name';
       else if (h === '库存量' || h === '成本价' || h === '售价') cls = 'col-num';
       else if (h === '删?') cls = 'col-check'; // 勾选列固定窄宽（表格为 fixed 布局）
-      trh.appendChild(el('th', cls, h === '删?' ? '删' : h));
+      else if (h === '序号') cls = 'col-seq';
+      const th = el('th', cls, h === '删?' ? '删' : h);
+      if (plainView && h === '库存量') {
+        th.style.cursor = 'pointer';
+        th.title = '点击按库存量倒序，再次点击改为正序';
+        th.textContent = '库存量' + (stockQtySort === 'desc' ? ' ▼' : (stockQtySort === 'asc' ? ' ▲' : ''));
+        th.onclick = () => { stockQtySort = stockQtySort === 'desc' ? 'asc' : 'desc'; renderStockPage(); };
+      }
+      trh.appendChild(th);
     });
     if (stockBatchMode === 'edit') {
       const allDel = items.length > 0 && items.every((it) => stockDelSel.has(it.name));
@@ -1274,11 +1303,11 @@
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
-    items.forEach((it) => {
+    items.forEach((it, idx) => {
       const marked = stockDelSel.has(it.name);
       if (stockBatchMode === 'edit') tbody.appendChild(marked ? stockPlainRow(it, true, true) : stockEditRow(it));
       else if (stockBatchMode === 'wh') tbody.appendChild(stockWhRow(it));
-      else tbody.appendChild(stockPlainRow(it, false, false));
+      else tbody.appendChild(stockPlainRow(it, false, false, idx + 1));
     });
     if (!items.length) {
       const tr = el('tr');
@@ -1287,13 +1316,38 @@
       tr.appendChild(td);
       tbody.appendChild(tr);
     }
+    // 库存合计行（仅 admin）：成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价。成本价/售价为负或非数字的行在该项中忽略
+    if (plainView && me && me.role === 'admin' && stockData.canSeeCost && stockData.canSeePrice && items.length) {
+      let costSum = 0;
+      let priceSum = 0;
+      items.forEach((it) => {
+        const q = Number(it.qty);
+        const c = Number(it.cost);
+        const p = Number(it.price);
+        if (Number.isFinite(q) && Number.isFinite(c) && c >= 0) costSum += q * c;
+        if (Number.isFinite(q) && Number.isFinite(p) && p >= 0) priceSum += q * p;
+      });
+      const tr = el('tr', 'stock-total-row');
+      const tdGap = el('td'); tdGap.colSpan = 2; tr.appendChild(tdGap);
+      const tdQ = el('td', 'num'); tdQ.textContent = '合计 →'; tr.appendChild(tdQ);
+      const tdC = el('td', 'num'); tdC.textContent = fmtCost(costSum); tdC.title = '成本总和（Σ 库存量×成本价；成本价为负或非数字的行已忽略）'; tr.appendChild(tdC);
+      const tdP = el('td', 'num'); tdP.textContent = fmtSale(priceSum); tdP.title = '售价总和（Σ 库存量×售价；售价为负或非数字的行已忽略）'; tr.appendChild(tdP);
+      const tdGap2 = el('td'); tdGap2.colSpan = 2; tr.appendChild(tdGap2);
+      tbody.appendChild(tr);
+    }
     tbl.appendChild(tbody);
     box.appendChild(tbl);
   }
 
-  function stockPlainRow(it, withCheckbox, marked) {
+  function stockPlainRow(it, withCheckbox, marked, seq) {
     const zero = Number(it.qty) === 0; // 库存量为 0 的行整行标红提示
+    const modRed = it.lastModAt && (Date.now() - it.lastModAt) < 86400000; // admin 修改后 24 小时内：成本价/售价/备注显示红色
     const tr = el('tr', marked ? 'stock-row-del' : (zero ? 'stock-row-zero' : ''));
+    if (seq !== undefined) {
+      const tdSeq = el('td', 'col-seq');
+      tdSeq.textContent = String(seq);
+      tr.appendChild(tdSeq);
+    }
     if (withCheckbox) {
       const tdSel = el('td', 'col-check');
       const cb = el('input');
@@ -1316,9 +1370,9 @@
     };
     addLabeled('col-name-t', it.name || '', '货品名称');
     addLabeled('num col-qty', fmtQty(it.qty), '库存量');
-    if (stockData.canSeeCost) addLabeled('num', fmtCost(it.cost), '成本价');
-    if (stockData.canSeePrice) addLabeled('num', fmtSale(it.price), '售价');
-    addLabeled('stock-note', it.note || '', '备注');
+    if (stockData.canSeeCost) addLabeled('num' + (modRed ? ' stock-mod-red' : ''), fmtCost(it.cost), '成本价');
+    if (stockData.canSeePrice) addLabeled('num' + (modRed ? ' stock-mod-red' : ''), fmtSale(it.price), '售价');
+    addLabeled('stock-note' + (modRed ? ' stock-mod-red' : ''), it.note || '', '备注');
     addLabeled('stock-note stock-wh', it.wh || '', '备注（库房）'); // 所有人可见
     return tr;
   }
@@ -2481,9 +2535,27 @@
   // ---------- 设置（左下角 ⚙️；个人偏好存后端跟账号走，之后可扩展更多设置项） ----------
   let prefs = null;
 
+  const PAGE_ORDER_KEYS = ['btn-stock', 'btn-recv', 'btn-inv', 'btn-fav', 'btn-apps', 'btn-dispatch', 'btn-perf', 'btn-todo', 'btn-pay'];
+
+  function applyPageOrder() {
+    // 个人侧栏功能排序（仅桌面侧栏；手机抽屉与侧栏同源跟随，底部导航不变）
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
+    const btns = PAGE_ORDER_KEYS.map((id) => document.getElementById(id)).filter(Boolean);
+    if (!btns.length) return;
+    let seq = (prefs && Array.isArray(prefs.pageOrder)) ? prefs.pageOrder.filter((id) => btns.some((b) => b.id === id)) : [];
+    PAGE_ORDER_KEYS.forEach((id) => { if (!seq.includes(id)) seq.push(id); }); // 新增按钮自动补到末尾
+    const anchor = sidebar.querySelector('.side-label'); // 「历史报价」标签：功能按钮排在其之前
+    seq.forEach((id) => {
+      const b = document.getElementById(id);
+      if (b) sidebar.insertBefore(b, anchor);
+    });
+  }
+
   function applyPrefs() {
     // 应用收藏夹入口开关（默认显示；仅对自己生效）
     $('#btn-apps').classList.toggle('hidden', !!(prefs && prefs.hideApps));
+    applyPageOrder();
     if (prefs && prefs.hideApps && !$('#apps-page').classList.contains('hidden')) showPage('chat');
   }
 
@@ -2495,7 +2567,7 @@
     applyPrefs();
   }
 
-  function openSettingsModal() {
+  async function openSettingsModal() {
     openModal('设置');
     const body = $('#modal-body');
     body.appendChild(el('div', 'settings-label', '页面开关'));
@@ -2517,7 +2589,75 @@
         applyPrefs();
       } catch (e) { cb.checked = !cb.checked; alert(e.message); }
     };
-    body.appendChild(el('div', 'modal-hint', '更多设置项后续会陆续加入。'));
+    // 个人侧栏功能排序（仅桌面侧栏）
+    body.appendChild(el('div', 'settings-label', '侧栏功能排序（仅桌面侧栏生效）'));
+    const secOrd = el('div', 'settings-section');
+    body.appendChild(secOrd);
+    const curOrder = PAGE_ORDER_KEYS.map((id) => document.getElementById(id)).filter(Boolean).map((b) => b.id);
+    const labelOf = (id) => { const b = document.getElementById(id); return b ? b.textContent.trim() : id; };
+    const saveOrder = async (arr) => {
+      try {
+        await api('POST', '/api/prefs-item', { key: 'pageOrder', value: arr });
+        prefs = prefs || {};
+        prefs.pageOrder = arr;
+        applyPageOrder();
+      } catch (e) { alert(e.message); }
+    };
+    const renderOrd = () => {
+      secOrd.innerHTML = '';
+      secOrd.appendChild(el('div', 'modal-hint', '用 ↑↓ 调整各功能在侧栏中的先后顺序，改动立即保存。'));
+      curOrder.forEach((id, i) => {
+        const row = el('div', 'order-row');
+        row.appendChild(el('span', '', labelOf(id)));
+        const up = el('button', 'mini-btn', '↑');
+        up.disabled = i === 0;
+        up.title = '上移';
+        up.onclick = () => { [curOrder[i - 1], curOrder[i]] = [curOrder[i], curOrder[i - 1]]; saveOrder(curOrder.slice()); renderOrd(); };
+        const dn = el('button', 'mini-btn', '↓');
+        dn.disabled = i === curOrder.length - 1;
+        dn.title = '下移';
+        dn.onclick = () => { [curOrder[i + 1], curOrder[i]] = [curOrder[i], curOrder[i + 1]]; saveOrder(curOrder.slice()); renderOrd(); };
+        row.appendChild(up);
+        row.appendChild(dn);
+        secOrd.appendChild(row);
+      });
+    };
+    renderOrd();
+    // admin：无库存产品统计的修改权限（在所有成员中勾选；admin 本身始终有权限）
+    if (me && me.role === 'admin') {
+      body.appendChild(el('div', 'settings-label', '「无库存产品统计」修改权限'));
+      const secNs = el('div', 'settings-section');
+      body.appendChild(secNs);
+      try {
+        const [rNs, rUs] = await Promise.all([api('GET', '/api/nostock'), api('GET', '/api/users')]);
+        const editors = new Set(rNs.editors || []);
+        const users = (rUs.users || []).filter((u) => u.username !== me.username); // admin 自身始终有权限，不需勾选
+        secNs.appendChild(el('div', 'modal-hint', '勾选哪些成员可以修改「无库存产品统计」（批量改后保存）；未勾选的成员只能查看。'));
+        users.forEach((u) => {
+          const l = el('label', 'fav-vis-item');
+          const c = el('input');
+          c.type = 'checkbox';
+          c.checked = editors.has(u.username);
+          c.onchange = async () => {
+            if (c.checked) editors.add(u.username); else editors.delete(u.username);
+            try {
+              const rr = await api('POST', '/api/nostock-item', { action: 'editors', list: [...editors] });
+              editors.clear();
+              (rr.list || []).forEach((n) => editors.add(n));
+            } catch (e) {
+              c.checked = !c.checked;
+              alert(e.message);
+            }
+          };
+          l.appendChild(c);
+          l.appendChild(el('span', '', u.username));
+          l.appendChild(el('span', 'fav-vis-role', roleText(u.role)));
+          secNs.appendChild(l);
+        });
+      } catch (e) {
+        secNs.appendChild(el('div', 'modal-hint', '权限列表加载失败：' + e.message));
+      }
+    }
   }
 
   function showPage(p) {
@@ -2529,6 +2669,9 @@
     $('#fav-page').classList.toggle('hidden', p !== 'fav');
     $('#apps-page').classList.toggle('hidden', p !== 'apps');
     $('#dispatch-page').classList.toggle('hidden', p !== 'dispatch');
+    $('#perf-page').classList.toggle('hidden', p !== 'perf');
+    $('#todo-page').classList.toggle('hidden', p !== 'todo');
+    $('#pay-page').classList.toggle('hidden', p !== 'pay');
     $('#btn-prices').classList.toggle('active', p === 'price');
     $('#btn-stock').classList.toggle('active', p === 'stock');
     $('#btn-recv').classList.toggle('active', p === 'recv');
@@ -2536,6 +2679,9 @@
     $('#btn-fav').classList.toggle('active', p === 'fav');
     $('#btn-apps').classList.toggle('active', p === 'apps');
     $('#btn-dispatch').classList.toggle('active', p === 'dispatch');
+    $('#btn-perf').classList.toggle('active', p === 'perf');
+    $('#btn-todo').classList.toggle('active', p === 'todo');
+    $('#btn-pay').classList.toggle('active', p === 'pay');
     if (p === 'price') loadPriceData();
     if (p === 'stock') loadStock();
     if (p === 'recv') loadRecv();
@@ -2543,6 +2689,481 @@
     if (p === 'fav') loadFav();
     if (p === 'apps') loadApps();
     if (p === 'dispatch') loadDispatch();
+    if (p === 'perf') loadPerf();
+    if (p === 'todo') loadTodos();
+    if (p === 'pay') loadPayments();
+  }
+
+  // ---------- 业绩报表（admin 导入「经营分析」表；业务员只看自己的行；月到款考核含提成与季度加和） ----------
+  let perfData = null;
+  let perfTab = 'perf'; // 'perf' = 月业绩统计 | 'pay' = 月到款考核
+
+  async function loadPerf() {
+    const box = $('#perf-content');
+    if (perfData) { renderPerfPage(); refreshPerf(); return; } // 缓存秒开 + 后台静默刷新
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      perfData = await api('GET', '/api/perf');
+      renderPerfPage();
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
+  function refreshPerf() {
+    api('GET', '/api/perf').then((d) => { perfData = d; renderPerfPage(); }).catch(() => {});
+  }
+
+  function perfNum(s) { const n = Number(String(s || '').replace(/,/g, '')); return Number.isFinite(n) ? n : 0; }
+  function perfComm(profitNum) { return (profitNum * 0.9 - 30000) * 0.3; } // 提成 =（毛利×0.9−30000）×0.3
+  function fmtPerf(n) { return Number.isFinite(n) ? n.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) : String(n); }
+  // 向上百位取整：401→500，2399→2400
+  function ceil100(n) { return Math.ceil(n / 100) * 100; }
+
+  function renderPerfPage() {
+    const box = $('#perf-content');
+    const info = $('#perf-info');
+    info.innerHTML = '';
+    info.appendChild(el('span', 'stock-import-time', perfTab === 'perf' ? '月业绩统计（数量/金额/成本/毛利/毛利率）' : '月到款考核（含提成 =（毛利×0.9−30000）×0.3；季度加和行向上百位取整）'));
+    const d = perfData || { items: [], canAdmin: false };
+    const bar = el('div', 'stock-toolbar');
+    const mkTab = (key, label) => {
+      const b = el('button', 'price-tab' + (perfTab === key ? ' active' : ''), label);
+      b.onclick = () => { perfTab = key; renderPerfPage(); };
+      bar.appendChild(b);
+    };
+    mkTab('perf', '月业绩统计');
+    mkTab('pay', '月到款考核');
+    if (d.canAdmin) {
+      const bImp = el('button', 'primary', perfTab === 'perf' ? '⇪ 导入业绩' : '⇪ 导入到款');
+      bImp.onclick = () => openPerfImportModal(perfTab);
+      bar.appendChild(bImp);
+    }
+    box.innerHTML = '';
+    box.appendChild(bar);
+    const type = perfTab;
+    const list = (d.items || []).filter((x) => x.type === type);
+    if (!list.length) {
+      box.appendChild(el('div', 'modal-hint', perfTab === 'perf' ? '还没有月业绩记录（由管理员导入）' : '还没有月到款记录（由管理员导入）'));
+      return;
+    }
+    list.forEach((im) => box.appendChild(renderPerfBlock(im, d.canAdmin)));
+  }
+
+  function renderPerfBlock(im, canAdmin) {
+    const wrap = el('div', 'perf-block');
+    const head = el('div', 'perf-block-head');
+    head.appendChild(el('span', 'perf-block-title', im.name + '（' + im.year + ' 年 ' + im.month + ' 月）'));
+    if (canAdmin) {
+      const bDel = el('button', 'fav-del', '🗑 删除本次导入');
+      bDel.title = '删除后所有人都不再看到这批数据';
+      bDel.onclick = async () => {
+        if (!confirm('删除「' + im.name + '（' + im.year + ' 年 ' + im.month + ' 月）」这次导入？删除后所有人都不再看到这批数据。')) return;
+        try {
+          await api('POST', '/api/perf-item', { action: 'delete', id: im.id });
+          refreshPerf();
+        } catch (e) { alert(e.message); }
+      };
+      head.appendChild(bDel);
+    }
+    wrap.appendChild(head);
+    const isPay = perfTab === 'pay';
+    const tbl = el('table', 'stock-table perf-table');
+    const trh = el('tr');
+    (isPay ? ['业务员', '数量', '金额', '成本', '毛利', '毛利率', '提成'] : ['业务员', '数量', '金额', '成本', '毛利', '毛利率']).forEach((h) => trh.appendChild(el('th', '', h)));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    (im.rows || []).forEach((r) => {
+      const tr = el('tr');
+      const mk = (text) => { const td = el('td'); td.textContent = text; tr.appendChild(td); };
+      mk(r.sales);
+      mk(fmtQty(r.qty));
+      mk(fmtPerf(perfNum(r.amount)));
+      mk(fmtPerf(perfNum(r.cost)));
+      mk(fmtPerf(perfNum(r.profit)));
+      mk(r.rate || '');
+      if (isPay) mk(fmtPerf(perfComm(perfNum(r.profit))));
+      tbody.appendChild(tr);
+    });
+    // 季度加和行：显示在季度末月（3/6/9/12）这次导入的表格底部；
+    // 毛利加和=该季度全部导入毛利相加（同年月多次导入全部累加）；提成加和=（季度毛利总和×0.9−30000）×0.3 向上百位取整
+    if (isPay && Number(im.month) % 3 === 0) {
+      const qEnd = Number(im.month);
+      const qStart = qEnd - 2;
+      const all = ((perfData && perfData.items) || []).filter((x) => x.type === 'pay' && Number(x.year) === Number(im.year) && Number(x.month) >= qStart && Number(x.month) <= qEnd);
+      let profitSum = 0;
+      all.forEach((x) => (x.rows || []).forEach((r) => { profitSum += perfNum(r.profit); }));
+      const commSum = ceil100(perfComm(profitSum));
+      const tr = el('tr', 'perf-quarter-row');
+      const tdL = el('td');
+      tdL.colSpan = 4;
+      tdL.textContent = im.year + ' 年第 ' + (qEnd / 3) + ' 季度加和（' + qStart + '-' + qEnd + ' 月全部导入）';
+      tr.appendChild(tdL);
+      const tdP = el('td', 'num'); tdP.textContent = fmtPerf(profitSum); tdP.title = '毛利加和'; tr.appendChild(tdP);
+      tr.appendChild(el('td'));
+      const tdC = el('td', 'num'); tdC.textContent = fmtPerf(commSum); tdC.title = '提成加和（向上百位取整）'; tr.appendChild(tdC);
+      tbody.appendChild(tr);
+    }
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+    return wrap;
+  }
+
+  function openPerfImportModal(type) {
+    openModal(type === 'perf' ? '导入月业绩' : '导入月到款');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '选择「经营分析」格式的 Excel（表头：序 业务员 数量 金额 合计金额 成本 毛利 毛利率）。合计金额列不使用；末行合计自动跳过。'));
+    const grid = el('div', 'recv-edit-grid');
+    body.appendChild(grid);
+    const mkField = (labelText, input, wide) => {
+      const w = el('label', 'rf-field' + (wide ? ' rf-wide' : ''));
+      w.appendChild(el('span', 'rf-label', labelText));
+      w.appendChild(input);
+      grid.appendChild(w);
+      return input;
+    };
+    const iName = mkField('导入名称', (() => { const i = el('input'); i.placeholder = '例如：11月业绩（给这次导入起个名字）'; return i; })(), true);
+    const iYear = mkField('年', (() => { const i = el('input'); i.placeholder = '2026'; i.inputMode = 'numeric'; return i; })());
+    const iMonth = mkField('月', (() => { const i = el('input'); i.placeholder = '11'; i.inputMode = 'numeric'; return i; })());
+    const fi = mkField('Excel 文件', (() => { const i = el('input'); i.type = 'file'; i.accept = '.xls,.xlsx'; return i; })(), true);
+    const bOk = el('button', 'primary', '导入');
+    bOk.onclick = async () => {
+      const f = fi.files && fi.files[0];
+      const name = iName.value.trim();
+      const year = iYear.value.trim();
+      const month = iMonth.value.trim();
+      if (!name) { alert('请填写导入名称'); return; }
+      if (!/^\d{4}$/.test(year)) { alert('年份须为 4 位数字，如 2026'); return; }
+      if (!/^\d{1,2}$/.test(month) || Number(month) < 1 || Number(month) > 12) { alert('月份须为 1-12'); return; }
+      if (!f) { alert('请选择 Excel 文件'); return; }
+      bOk.disabled = true;
+      try {
+        const b64 = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result).split(',')[1] || '');
+          r.onerror = () => reject(new Error('读取文件失败'));
+          r.readAsDataURL(f);
+        });
+        await api('POST', '/api/perf-item', { action: 'import', type, name, year, month, dataBase64: b64 });
+        closeModal();
+        perfData = null;
+        loadPerf();
+      } catch (e) { alert(e.message); }
+      finally { bOk.disabled = false; }
+    };
+    const foot = el('div', 'form-row');
+    foot.appendChild(bOk);
+    body.appendChild(foot);
+  }
+
+  // ---------- 无库存产品统计（所有人可见同库存表；修改=admin+设置授权用户；批量改后一次性保存） ----------
+  let noStockData = null;
+
+  async function openNoStockModal() {
+    openModal('无库存产品统计', true);
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      noStockData = await api('GET', '/api/nostock');
+    } catch (e) {
+      body.innerHTML = '';
+      body.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+      return;
+    }
+    renderNoStockBody();
+  }
+
+  function renderNoStockBody() {
+    const body = $('#modal-body');
+    body.innerHTML = '';
+    const d = noStockData || { items: [], canEdit: false };
+    body.appendChild(el('div', 'modal-hint', d.canEdit
+      ? '批量修改：直接在表格里改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'
+      : '只读查看（修改权限由管理员在设置中指定）。'));
+    const rows = (d.items || []).map((r) => ({ ...r }));
+    const tbl = el('table', 'stock-table nostock-table');
+    const trh = el('tr');
+    ['名称', '市场价1', '市场价2', '市场价3', '定价'].forEach((h) => trh.appendChild(el('th', '', h)));
+    if (d.canEdit) trh.appendChild(el('th', '', '删'));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    if (d.canEdit) {
+      const rebuild = () => { noStockData = { ...d, items: rows }; renderNoStockBody(); };
+      rows.forEach((r, i) => {
+        const tr = el('tr');
+        ['name', 'mp1', 'mp2', 'mp3', 'price'].forEach((k) => {
+          const td = el('td');
+          const inp = stockCellInput(r[k] || '', () => { rows[i][k] = inp.value; });
+          td.appendChild(inp);
+          tr.appendChild(td);
+        });
+        const tdDel = el('td');
+        const bDel = el('button', 'fav-del', '🗑');
+        bDel.onclick = () => { rows.splice(i, 1); rebuild(); };
+        tdDel.appendChild(bDel);
+        tr.appendChild(tdDel);
+        tbody.appendChild(tr);
+      });
+      const trAdd = el('tr');
+      const tdAdd = el('td');
+      tdAdd.colSpan = 6;
+      const bAdd = el('button', 'primary', '＋ 新增一行');
+      bAdd.onclick = () => { rows.push({ name: '', mp1: '', mp2: '', mp3: '', price: '' }); rebuild(); };
+      tdAdd.appendChild(bAdd);
+      tr.appendChild(tdAdd);
+      tbody.appendChild(trAdd);
+      tbl.appendChild(tbody);
+      body.appendChild(tbl);
+      const foot = el('div', 'form-row');
+      const bSave = el('button', 'primary', '💾 保存全部');
+      bSave.onclick = async () => {
+        bSave.disabled = true;
+        try {
+          await api('POST', '/api/nostock-item', { action: 'batch', rows });
+          closeModal();
+        } catch (e) { alert(e.message); }
+        finally { bSave.disabled = false; }
+      };
+      foot.appendChild(bSave);
+      body.appendChild(foot);
+    } else {
+      rows.forEach((r) => {
+        const tr = el('tr');
+        [r.name, r.mp1, r.mp2, r.mp3, r.price].forEach((v) => { const td = el('td'); td.textContent = v || ''; tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      body.appendChild(tbl);
+      if (!rows.length) body.appendChild(el('div', 'modal-hint', '暂无数据'));
+    }
+  }
+
+  // ---------- 代办事项（每人自己的数据；完成后进历史，按完成时间倒序） ----------
+  let todoData = null;
+
+  async function loadTodos() {
+    const box = $('#todo-content');
+    if (todoData) { renderTodoPage(); refreshTodos(); return; }
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      todoData = await api('GET', '/api/todos');
+      renderTodoPage();
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
+  function refreshTodos() {
+    api('GET', '/api/todos').then((d) => { todoData = d; renderTodoPage(); }).catch(() => {});
+  }
+
+  function renderTodoPage() {
+    const box = $('#todo-content');
+    const info = $('#todo-info');
+    info.innerHTML = '';
+    info.appendChild(el('span', 'stock-import-time', '代办事项（个人数据，每人各自维护）'));
+    const d = todoData || { items: [] };
+    box.innerHTML = '';
+    const active = (d.items || []).filter((t) => !t.done).sort((a, b) => a.createdAt - b.createdAt);
+    const done = (d.items || []).filter((t) => t.done).sort((a, b) => b.doneAt - a.doneAt);
+    const bar = el('div', 'stock-toolbar');
+    const inp = el('input', 'price-search');
+    inp.placeholder = '输入要办的事，点击「新增代办」保存';
+    inp.style.flex = '1';
+    const bAdd = el('button', 'primary', '＋ 新增代办');
+    const add = async () => {
+      const text = inp.value.trim();
+      if (!text) { alert('请输入代办内容'); return; }
+      try {
+        await api('POST', '/api/todo-item', { action: 'add', text });
+        inp.value = '';
+        refreshTodos();
+      } catch (e) { alert(e.message); }
+    };
+    bAdd.onclick = add;
+    inp.onkeydown = (e) => { if (e.key === 'Enter') add(); };
+    bar.appendChild(inp);
+    bar.appendChild(bAdd);
+    box.appendChild(bar);
+    box.appendChild(el('div', 'modal-hint', '我的代办（' + active.length + '）——完成后不再显示'));
+    if (active.length) {
+      const tbl = el('table', 'stock-table todo-table');
+      const trh = el('tr');
+      ['代办内容', '创建时间', '操作'].forEach((h) => trh.appendChild(el('th', '', h)));
+      const thead = el('thead');
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+      const tbody = el('tbody');
+      active.forEach((t) => {
+        const tr = el('tr');
+        const mk = (text) => { const td = el('td'); td.textContent = text; tr.appendChild(td); };
+        mk(t.text);
+        mk(new Date(t.createdAt).toLocaleString('zh-CN'));
+        const tdOp = el('td');
+        const bDone = el('button', 'primary', '✔ 完成');
+        bDone.onclick = async () => {
+          try { await api('POST', '/api/todo-item', { action: 'done', id: t.id, value: true }); }
+          catch (e) { alert(e.message); }
+        };
+        tdOp.appendChild(bDone);
+        tr.appendChild(tdOp);
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      box.appendChild(tbl);
+    } else {
+      box.appendChild(el('div', 'modal-hint', '没有待办，在上方输入后点「新增代办」。'));
+    }
+    box.appendChild(el('div', 'modal-hint', '历史代办（已完成 ' + done.length + '，按完成时间倒序）'));
+    if (done.length) {
+      const tbl2 = el('table', 'stock-table todo-table');
+      const trh2 = el('tr');
+      ['代办内容', '完成时间'].forEach((h) => trh2.appendChild(el('th', '', h)));
+      const thead2 = el('thead');
+      thead2.appendChild(trh2);
+      tbl2.appendChild(thead2);
+      const tbody2 = el('tbody');
+      done.forEach((t) => {
+        const tr = el('tr', 'todo-done-row');
+        const td = el('td'); td.textContent = t.text; tr.appendChild(td);
+        const td2 = el('td'); td2.textContent = new Date(t.doneAt).toLocaleString('zh-CN'); tr.appendChild(td2);
+        tbody2.appendChild(tr);
+      });
+      tbl2.appendChild(tbody2);
+      box.appendChild(tbl2);
+    } else {
+      box.appendChild(el('div', 'modal-hint', '还没有已完成的代办。'));
+    }
+  }
+
+  // ---------- 款项统计（admin 维护；非 admin 只看经手人是自己的行） ----------
+  let payData = null;
+
+  async function loadPayments() {
+    const box = $('#pay-content');
+    if (payData) { renderPayPage(); refreshPayments(); return; }
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      payData = await api('GET', '/api/payments');
+      renderPayPage();
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
+  function refreshPayments() {
+    api('GET', '/api/payments').then((d) => { payData = d; renderPayPage(); }).catch(() => {});
+  }
+
+  function renderPayPage() {
+    const box = $('#pay-content');
+    const info = $('#pay-info');
+    info.innerHTML = '';
+    info.appendChild(el('span', 'stock-import-time', '款项统计' + ((payData && payData.canAdmin) ? '（admin 可见全部，可修改）' : '（仅显示经手人是你的款项）')));
+    const d = payData || { rows: [], canAdmin: false };
+    box.innerHTML = '';
+    if (d.canAdmin) {
+      const bar = el('div', 'stock-toolbar');
+      const bEdit = el('button', 'primary', '✏️ 修改款项（批量保存）');
+      bEdit.onclick = openPayEditModal;
+      bar.appendChild(bEdit);
+      box.appendChild(bar);
+    }
+    const rows = d.rows || [];
+    if (!rows.length) {
+      box.appendChild(el('div', 'modal-hint', '还没有款项记录' + (d.canAdmin ? '，点上方「修改款项」添加' : '')));
+      return;
+    }
+    const tbl = el('table', 'stock-table pay-table');
+    const trh = el('tr');
+    ['经手人', '日期', '公司', '金额', '备注'].forEach((h) => trh.appendChild(el('th', '', h)));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    rows.forEach((r) => {
+      const tr = el('tr');
+      [r.by, r.date, r.company, r.amount, r.note].forEach((v) => { const td = el('td'); td.textContent = v || ''; tr.appendChild(td); });
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+  }
+
+  function openPayEditModal() {
+    openModal('修改款项（一次保存全部）', true);
+    const body = $('#modal-body');
+    const users = (payData && payData.users) || [];
+    const rows = ((payData && payData.rows) || []).map((r) => ({ ...r }));
+    const render = () => {
+      body.innerHTML = '';
+      body.appendChild(el('div', 'modal-hint', '经手人必须从系统已有人员中选择；日期必填（YYYY-MM-DD）。全部修改完后点「保存全部」一次性生效。'));
+      const tbl = el('table', 'stock-table pay-table');
+      const trh = el('tr');
+      ['经手人', '日期', '公司', '金额', '备注', '删'].forEach((h) => trh.appendChild(el('th', '', h)));
+      const thead = el('thead');
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+      const tbody = el('tbody');
+      rows.forEach((r, i) => {
+        const tr = el('tr');
+        const tdU = el('td');
+        const selU = el('select', 'edit-input pay-select');
+        users.forEach((u) => {
+          const op = el('option', '', u);
+          op.value = u;
+          if (u === r.by) op.selected = true;
+          selU.appendChild(op);
+        });
+        selU.onchange = () => { r.by = selU.value; };
+        tdU.appendChild(selU);
+        tr.appendChild(tdU);
+        ['date', 'company', 'amount', 'note'].forEach((k) => {
+          const td = el('td');
+          const inp = stockCellInput(r[k] || '', () => { r[k] = inp.value; });
+          if (k === 'date') inp.placeholder = 'YYYY-MM-DD';
+          td.appendChild(inp);
+          tr.appendChild(td);
+        });
+        const tdDel = el('td');
+        const bDel = el('button', 'fav-del', '🗑');
+        bDel.onclick = () => { rows.splice(i, 1); render(); };
+        tdDel.appendChild(bDel);
+        tr.appendChild(tdDel);
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      body.appendChild(tbl);
+      const foot = el('div', 'form-row');
+      const bAdd = el('button', 'primary', '＋ 新增一行');
+      bAdd.onclick = () => { rows.push({ by: users[0] || '', date: '', company: '', amount: '', note: '' }); render(); };
+      foot.appendChild(bAdd);
+      const bSave = el('button', 'primary', '💾 保存全部');
+      bSave.onclick = async () => {
+        bSave.disabled = true;
+        try {
+          const r = await api('POST', '/api/payment-item', { action: 'batch', rows });
+          alert('已保存 ' + r.count + ' 行');
+          payData = null;
+          closeModal();
+          loadPayments();
+        } catch (e) { alert(e.message); }
+        finally { bSave.disabled = false; }
+      };
+      foot.appendChild(bSave);
+      body.appendChild(foot);
+    };
+    render();
   }
 
   // ---------- 外派预约申请（日期升序、过期自动废弃；客户名/地址按行可见名单；批准仅 admin） ----------
@@ -4064,6 +4685,9 @@
   $('#btn-apps').onclick = () => showPage('apps');
   $('#apps-search').oninput = () => renderAppsPage();
   $('#btn-dispatch').onclick = () => showPage('dispatch');
+  $('#btn-perf').onclick = () => showPage('perf');
+  $('#btn-todo').onclick = () => showPage('todo');
+  $('#btn-pay').onclick = () => showPage('pay');
   $('#dispatch-search').oninput = () => renderDispatchPage();
   $('#btn-settings').onclick = () => openSettingsModal();
   $('#btn-exit-imp').onclick = () => {

@@ -64,6 +64,9 @@
       <button id="btn-fav" class="side-btn">🔖 网页收藏夹</button>
       <button id="btn-apps" class="side-btn">🚀 应用收藏夹</button>
       <button id="btn-dispatch" class="side-btn">🗓️ 外派预约</button>
+      <button id="btn-perf" class="side-btn">📈 业绩报表</button>
+      <button id="btn-todo" class="side-btn">✅ 代办事项</button>
+      <button id="btn-pay" class="side-btn">💰 款项统计</button>
       <div class="side-label">历史报价</div>
       <div id="history-list" class="history-list"></div>
       <div class="side-footer">
@@ -140,6 +143,27 @@
         </div>
         <div id="dispatch-content" class="price-content"></div>
       </div>
+      <!-- 业绩报表页（admin 导入经营分析表；业务员只看自己行；月业绩统计 / 月到款考核两栏） -->
+      <div id="perf-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="perf-info" class="stock-info"></div>
+        </div>
+        <div id="perf-content" class="price-content"></div>
+      </div>
+      <!-- 代办事项页（每人个人数据；完成后进历史） -->
+      <div id="todo-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="todo-info" class="stock-info"></div>
+        </div>
+        <div id="todo-content" class="price-content"></div>
+      </div>
+      <!-- 款项统计页（admin 维护；非 admin 只看经手人是自己的行） -->
+      <div id="pay-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="pay-info" class="stock-info"></div>
+        </div>
+        <div id="pay-content" class="price-content"></div>
+      </div>
     </main>
 
     <!-- 手机底部导航（≤768px 才显示；点击转发到侧栏对应按钮，逻辑零重复） -->
@@ -163,12 +187,12 @@
     </div>
   </div>
 
-  <script src="config.js?v=2026061966"></script>
-  <script src="app.js?v=20261111-login"></script>
+  <script src="config.js?v=20261120-perf"></script>
+  <script src="app.js?v=20261120-perf"></script>
   <script>
     // PWA：注册 Service Worker（仅 https 或 localhost 生效；用 file:// 本地打开时自动跳过，不影响任何现有功能）
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
-      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=20261111-login').catch(function () {}); });
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=20261120-perf').catch(function () {}); });
     }
   </script>
 </body>
