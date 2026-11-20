@@ -697,7 +697,16 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .perf-block { margin-bottom: 20px; }
 .perf-block-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; }
 .perf-block-title { font-weight: 700; font-size: 14px; }
-.perf-table th, .perf-table td { text-align: center; white-space: nowrap; padding: 7px 12px; }
+/* 业绩报表：固定表格布局与列宽——月业绩/月到款/季度表所有块逐列对齐 */
+.perf-table { table-layout: fixed; width: 100%; }
+.perf-table th:nth-child(1), .perf-table td:nth-child(1) { width: 17%; }
+.perf-table th:nth-child(2), .perf-table td:nth-child(2) { width: 12%; }
+.perf-table th:nth-child(3), .perf-table td:nth-child(3) { width: 16%; }
+.perf-table th:nth-child(4), .perf-table td:nth-child(4) { width: 16%; }
+.perf-table th:nth-child(5), .perf-table td:nth-child(5) { width: 15%; }
+.perf-table th:nth-child(6), .perf-table td:nth-child(6) { width: 12%; }
+.perf-table th:nth-child(7), .perf-table td:nth-child(7) { width: 12%; }
+.perf-table th, .perf-table td { text-align: center; white-space: nowrap; padding: 7px 8px; overflow: hidden; }
 .perf-quarter-row td { background: #fff7e6; font-weight: 700; }
 /* 月统计行（每月表格底部）：加粗+浅灰底 */
 .perf-month-total td { background: #f4f6fb; font-weight: 700; }
