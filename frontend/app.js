@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-70（月统计行/到款考核剔除王海强与财务专用账号/批量修改空格误报修复/页签切换刷新）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-71（红字逐列对应/业绩表人名拼音排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1346,7 +1346,9 @@
 
   function stockPlainRow(it, withCheckbox, marked, seq) {
     const zero = Number(it.qty) === 0; // 库存量为 0 的行整行标红提示
-    const modRed = it.lastModAt && (Date.now() - it.lastModAt) < 86400000; // admin 修改后 24 小时内：成本价/售价/备注显示红色
+    const modRed = it.lastModAt && (Date.now() - it.lastModAt) < 86400000; // admin 修改后 24 小时内
+    // 一一对应：只有真正被改过的列才标红（lastModFields 记录 cost/price/note 哪些变了；旧数据无此字段则三列都红）
+    const redField = (f) => modRed && (!it.lastModFields || !!it.lastModFields[f]);
     const tr = el('tr', marked ? 'stock-row-del' : (zero ? 'stock-row-zero' : ''));
     if (seq !== undefined) {
       const tdSeq = el('td', 'col-seq');
@@ -1375,9 +1377,9 @@
     };
     addLabeled('col-name-t', it.name || '', '货品名称');
     addLabeled('num col-qty', fmtQty(it.qty), '库存量');
-    if (stockData.canSeeCost) addLabeled('num' + (modRed ? ' stock-mod-red' : ''), fmtCost(it.cost), '成本价');
-    if (stockData.canSeePrice) addLabeled('num' + (modRed ? ' stock-mod-red' : ''), fmtSale(it.price), '售价');
-    addLabeled('stock-note' + (modRed ? ' stock-mod-red' : ''), it.note || '', '备注');
+    if (stockData.canSeeCost) addLabeled('num' + (redField('cost') ? ' stock-mod-red' : ''), fmtCost(it.cost), '成本价');
+    if (stockData.canSeePrice) addLabeled('num' + (redField('price') ? ' stock-mod-red' : ''), fmtSale(it.price), '售价');
+    addLabeled('stock-note' + (redField('note') ? ' stock-mod-red' : ''), it.note || '', '备注');
     addLabeled('stock-note stock-wh', it.wh || '', '备注（库房）'); // 所有人可见
     return tr;
   }
@@ -2892,7 +2894,8 @@
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
-    (im.rows || []).forEach((r) => {
+    // 人名按字母序（拼音）排序——两栏与季度表用同一排序，保证每个表顺序一致
+    [...(im.rows || [])].sort((a, b) => String(a.sales).localeCompare(String(b.sales), 'zh')).forEach((r) => {
       const tr = el('tr');
       const mk = (text) => { const td = el('td'); td.textContent = text; tr.appendChild(td); };
       mk(r.sales);
