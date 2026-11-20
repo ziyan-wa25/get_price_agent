@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-72（无库存查看/批量修改两段式、款项统计页面内批量修改）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-73（设置折叠区默认收起、代办事项入口开关）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2563,10 +2563,12 @@
   }
 
   function applyPrefs() {
-    // 应用收藏夹入口开关（默认显示；仅对自己生效）
+    // 页面入口开关（默认显示；仅对自己生效）
     $('#btn-apps').classList.toggle('hidden', !!(prefs && prefs.hideApps));
+    $('#btn-todo').classList.toggle('hidden', !!(prefs && prefs.hideTodos)); // 代办事项开关，与应用收藏夹一致
     applyPageOrder();
     if (prefs && prefs.hideApps && !$('#apps-page').classList.contains('hidden')) showPage('chat');
+    if (prefs && prefs.hideTodos && !$('#todo-page').classList.contains('hidden')) showPage('chat');
   }
 
   async function loadPrefs() {
@@ -2580,29 +2582,50 @@
   async function openSettingsModal() {
     openModal('设置');
     const body = $('#modal-body');
+    // 可收起/展开的折叠区（默认收起，保持设置界面简洁）
+    const mkCollapse = (title, defOpen) => {
+      const head = el('div', 'settings-collapse');
+      const arrow = el('span', 'settings-arrow', defOpen ? '▾' : '▸');
+      head.appendChild(arrow);
+      head.appendChild(el('span', 'settings-collapse-title', title));
+      const sec = el('div', 'settings-section');
+      head.onclick = () => {
+        const open = sec.style.display !== 'none';
+        sec.style.display = open ? 'none' : '';
+        arrow.textContent = open ? '▸' : '▾';
+      };
+      if (!defOpen) sec.style.display = 'none';
+      return { head, sec };
+    };
     body.appendChild(el('div', 'settings-label', '页面开关'));
     const sec = el('div', 'settings-section');
     body.appendChild(sec);
-    const lab = el('label', 'fav-vis-item');
-    const cb = el('input');
-    cb.type = 'checkbox';
-    cb.checked = !(prefs && prefs.hideApps);
-    lab.appendChild(cb);
-    lab.appendChild(el('span', '', '显示「应用收藏夹」入口'));
-    sec.appendChild(lab);
-    sec.appendChild(el('div', 'modal-hint', '关闭后侧栏（含手机端抽屉）不再显示应用收藏夹；已收藏的应用与数据不受影响。设置只对自己生效，改动立即保存。'));
-    cb.onchange = async () => {
-      try {
-        const r = await api('POST', '/api/prefs-item', { key: 'hideApps', value: !cb.checked });
-        prefs = prefs || {};
-        prefs.hideApps = r.value;
-        applyPrefs();
-      } catch (e) { cb.checked = !cb.checked; alert(e.message); }
+    const mkToggle = (labelText, key) => {
+      const lab = el('label', 'fav-vis-item');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = !(prefs && prefs[key]);
+      lab.appendChild(cb);
+      lab.appendChild(el('span', '', labelText));
+      sec.appendChild(lab);
+      cb.onchange = async () => {
+        try {
+          const r = await api('POST', '/api/prefs-item', { key, value: !cb.checked });
+          prefs = prefs || {};
+          prefs[key] = r.value;
+          applyPrefs();
+        } catch (e) { cb.checked = !cb.checked; alert(e.message); }
+      };
+      return cb;
     };
-    // 个人侧栏功能排序（仅桌面侧栏）
-    body.appendChild(el('div', 'settings-label', '侧栏功能排序（仅桌面侧栏生效）'));
-    const secOrd = el('div', 'settings-section');
-    body.appendChild(secOrd);
+    mkToggle('显示「应用收藏夹」入口', 'hideApps');
+    mkToggle('显示「代办事项」入口', 'hideTodos'); // 与应用收藏夹同一模式
+    sec.appendChild(el('div', 'modal-hint', '关闭后侧栏（含手机端抽屉）不再显示对应入口；已有数据不受影响。设置只对自己生效，改动立即保存。'));
+    // 个人侧栏功能排序（仅桌面侧栏）——可收起/展开，默认收起
+    const ord = mkCollapse('侧栏功能排序（仅桌面侧栏生效）', false);
+    body.appendChild(ord.head);
+    body.appendChild(ord.sec);
+    const secOrd = ord.sec;
     const curOrder = PAGE_ORDER_KEYS.map((id) => document.getElementById(id)).filter(Boolean).map((b) => b.id);
     const labelOf = (id) => { const b = document.getElementById(id); return b ? b.textContent.trim() : id; };
     const saveOrder = async (arr) => {
@@ -2653,20 +2676,12 @@
       });
     };
     renderOrd();
-    // admin：无库存产品统计的修改权限（在所有成员中勾选；admin 本身始终有权限）——可收起/展开
+    // admin：无库存产品统计的修改权限（在所有成员中勾选；admin 本身始终有权限）——默认收起
     if (me && me.role === 'admin') {
-      const headRow = el('div', 'settings-collapse');
-      const arrow = el('span', 'settings-arrow', '▾');
-      headRow.appendChild(arrow);
-      headRow.appendChild(el('span', 'settings-collapse-title', '「无库存产品统计」修改权限'));
-      const secNs = el('div', 'settings-section');
-      headRow.onclick = () => {
-        const open = secNs.style.display !== 'none';
-        secNs.style.display = open ? 'none' : '';
-        arrow.textContent = open ? '▸' : '▾'; // 点击收起/展开
-      };
-      body.appendChild(headRow);
-      body.appendChild(secNs);
+      const ns = mkCollapse('「无库存产品统计」修改权限', false);
+      body.appendChild(ns.head);
+      body.appendChild(ns.sec);
+      const secNs = ns.sec;
       try {
         const [rNs, rUs] = await Promise.all([api('GET', '/api/nostock'), api('GET', '/api/users')]);
         const editors = new Set(rNs.editors || []);
