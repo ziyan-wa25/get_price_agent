@@ -675,10 +675,19 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* 退出模拟按钮（模拟登录时左下角显示，醒目警示色） */
 .side-btn-warn { color: #b3423a; border-color: #e4b6b1; font-weight: 600; }
 .side-btn-warn:hover { background: #fdf3f2; border-color: #b3423a; }
-/* 库存表：序号列（极窄，占用货品名称空间）/ admin 修改 24h 红字 / 合计行 */
-.col-seq { width: 34px; min-width: 34px; color: #8a93a6; font-size: 12px; }
+/* 库存表：序号列（极窄、数字居中，占用货品名称空间）/ admin 修改 24h 红字 / 合计行 */
+.col-seq { width: 34px; min-width: 34px; color: #8a93a6; font-size: 12px; text-align: center; }
 .stock-mod-red { color: #c0392b !important; font-weight: 600; }
 .stock-total-row td { background: #f4f6fb; font-weight: 700; }
+/* 价格页签：激活态悬停时保持蓝色不泛白 */
+.price-tab.active:hover { background: #4d6bfe; border-color: #4d6bfe; color: #fff; }
+/* 设置：侧栏拖拽排序 */
+.order-list { display: flex; flex-direction: column; gap: 4px; }
+.order-row { padding: 7px 12px; border: 1px solid #d9dce1; border-radius: 8px; background: #fff; cursor: grab; user-select: none; font-size: 13px; }
+.order-row:hover { border-color: #4d6bfe; }
+.order-row.dragging { opacity: .45; }
+/* 款项统计：每人合计行加粗 */
+.pay-total-row td { font-weight: 700; background: #f4f6fb; }
 /* 业绩报表 */
 .perf-block { margin-bottom: 20px; }
 .perf-block-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; }

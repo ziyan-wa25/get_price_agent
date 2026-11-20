@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-67（业绩报表/无库存统计/库存合计与24h红字/序号列/库存量排序/代办事项/款项统计/侧栏排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-68（debug 修复：红字透传/无库存权限 roleText/季度提成=各月加和取整/业绩按年月正序无名称/序号居中/合计取整/拖拽排序/款项分组合计+日历）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -35,6 +35,10 @@
     if (cls) e.className = cls;
     if (text !== undefined && text !== null) e.textContent = text;
     return e;
+  }
+
+  function roleText(role) {
+    return role === 'admin' ? '管理员' : (role === 'uploader' ? '库存上传员' : (role === 'exporter' ? '库存导出员' : (role === 'referrer' ? '参考者' : '普通用户')));
   }
 
   function fmt(n) {
@@ -1316,7 +1320,8 @@
       tr.appendChild(td);
       tbody.appendChild(tr);
     }
-    // 库存合计行（仅 admin）：成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价。成本价/售价为负或非数字的行在该项中忽略
+    // 库存合计行（仅 admin）：成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价（保留整数，防撑格）。
+    // 成本价/售价为负或非数字的行在该项中忽略
     if (plainView && me && me.role === 'admin' && stockData.canSeeCost && stockData.canSeePrice && items.length) {
       let costSum = 0;
       let priceSum = 0;
@@ -1329,9 +1334,9 @@
       });
       const tr = el('tr', 'stock-total-row');
       const tdGap = el('td'); tdGap.colSpan = 2; tr.appendChild(tdGap);
-      const tdQ = el('td', 'num'); tdQ.textContent = '合计 →'; tr.appendChild(tdQ);
-      const tdC = el('td', 'num'); tdC.textContent = fmtCost(costSum); tdC.title = '成本总和（Σ 库存量×成本价；成本价为负或非数字的行已忽略）'; tr.appendChild(tdC);
-      const tdP = el('td', 'num'); tdP.textContent = fmtSale(priceSum); tdP.title = '售价总和（Σ 库存量×售价；售价为负或非数字的行已忽略）'; tr.appendChild(tdP);
+      const tdQ = el('td', 'num'); tdQ.textContent = '合计'; tr.appendChild(tdQ);
+      const tdC = el('td', 'num'); tdC.textContent = fmtCost(Math.round(costSum)); tdC.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）'; tr.appendChild(tdC);
+      const tdP = el('td', 'num'); tdP.textContent = fmtSale(Math.round(priceSum)); tdP.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）'; tr.appendChild(tdP);
       const tdGap2 = el('td'); tdGap2.colSpan = 2; tr.appendChild(tdGap2);
       tbody.appendChild(tr);
     }
@@ -2605,21 +2610,41 @@
     };
     const renderOrd = () => {
       secOrd.innerHTML = '';
-      secOrd.appendChild(el('div', 'modal-hint', '用 ↑↓ 调整各功能在侧栏中的先后顺序，改动立即保存。'));
-      curOrder.forEach((id, i) => {
+      secOrd.appendChild(el('div', 'modal-hint', '按住某一行上下拖动到目标位置，松手自动保存（仅桌面侧栏生效）。'));
+      const list = el('div', 'order-list');
+      secOrd.appendChild(list);
+      let dragEl = null;
+      curOrder.forEach((id) => {
         const row = el('div', 'order-row');
-        row.appendChild(el('span', '', labelOf(id)));
-        const up = el('button', 'mini-btn', '↑');
-        up.disabled = i === 0;
-        up.title = '上移';
-        up.onclick = () => { [curOrder[i - 1], curOrder[i]] = [curOrder[i], curOrder[i - 1]]; saveOrder(curOrder.slice()); renderOrd(); };
-        const dn = el('button', 'mini-btn', '↓');
-        dn.disabled = i === curOrder.length - 1;
-        dn.title = '下移';
-        dn.onclick = () => { [curOrder[i + 1], curOrder[i]] = [curOrder[i], curOrder[i + 1]]; saveOrder(curOrder.slice()); renderOrd(); };
-        row.appendChild(up);
-        row.appendChild(dn);
-        secOrd.appendChild(row);
+        row.dataset.id = id;
+        row.textContent = labelOf(id);
+        row.draggable = true;
+        row.addEventListener('dragstart', (e) => {
+          dragEl = row;
+          row.classList.add('dragging');
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', id); } catch (err) { /* 忽略 */ }
+          }
+        });
+        row.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          if (!dragEl || dragEl === row) return;
+          const rect = row.getBoundingClientRect();
+          const before = (e.clientY - rect.top) < rect.height / 2; // 上半=插到前面，下半=插到后面
+          list.insertBefore(dragEl, before ? row : row.nextSibling);
+        });
+        row.addEventListener('dragend', () => {
+          row.classList.remove('dragging');
+          dragEl = null;
+          const newOrder = [...list.children].map((c) => c.dataset.id).filter(Boolean);
+          if (newOrder.join(',') !== curOrder.join(',')) {
+            curOrder.length = 0;
+            newOrder.forEach((x) => curOrder.push(x));
+            saveOrder(curOrder.slice());
+          }
+        });
+        list.appendChild(row);
       });
     };
     renderOrd();
@@ -2755,12 +2780,12 @@
   function renderPerfBlock(im, canAdmin) {
     const wrap = el('div', 'perf-block');
     const head = el('div', 'perf-block-head');
-    head.appendChild(el('span', 'perf-block-title', im.name + '（' + im.year + ' 年 ' + im.month + ' 月）'));
+    head.appendChild(el('span', 'perf-block-title', im.year + ' 年 ' + im.month + ' 月'));
     if (canAdmin) {
       const bDel = el('button', 'fav-del', '🗑 删除本次导入');
       bDel.title = '删除后所有人都不再看到这批数据';
       bDel.onclick = async () => {
-        if (!confirm('删除「' + im.name + '（' + im.year + ' 年 ' + im.month + ' 月）」这次导入？删除后所有人都不再看到这批数据。')) return;
+        if (!confirm('删除「' + im.year + ' 年 ' + im.month + ' 月」这次导入？删除后所有人都不再看到这批数据。')) return;
         try {
           await api('POST', '/api/perf-item', { action: 'delete', id: im.id });
           refreshPerf();
@@ -2790,14 +2815,18 @@
       tbody.appendChild(tr);
     });
     // 季度加和行：显示在季度末月（3/6/9/12）这次导入的表格底部；
-    // 毛利加和=该季度全部导入毛利相加（同年月多次导入全部累加）；提成加和=（季度毛利总和×0.9−30000）×0.3 向上百位取整
+    // 毛利加和=该季度全部导入毛利相加（同年月多次导入全部累加）；
+    // 提成加和=三个月各自的月提成（月毛利总和×0.9−30000）×0.3 相加，再向上百位取整
     if (isPay && Number(im.month) % 3 === 0) {
       const qEnd = Number(im.month);
       const qStart = qEnd - 2;
       const all = ((perfData && perfData.items) || []).filter((x) => x.type === 'pay' && Number(x.year) === Number(im.year) && Number(x.month) >= qStart && Number(x.month) <= qEnd);
-      let profitSum = 0;
-      all.forEach((x) => (x.rows || []).forEach((r) => { profitSum += perfNum(r.profit); }));
-      const commSum = ceil100(perfComm(profitSum));
+      const monthProfit = {};
+      all.forEach((x) => {
+        monthProfit[x.month] = (monthProfit[x.month] || 0) + (x.rows || []).reduce((s, r) => s + perfNum(r.profit), 0);
+      });
+      const profitSum = Object.keys(monthProfit).reduce((s, m) => s + monthProfit[m], 0);
+      const commSum = ceil100(Object.keys(monthProfit).reduce((s, m) => s + perfComm(monthProfit[m]), 0));
       const tr = el('tr', 'perf-quarter-row');
       const tdL = el('td');
       tdL.colSpan = 4;
@@ -2805,7 +2834,7 @@
       tr.appendChild(tdL);
       const tdP = el('td', 'num'); tdP.textContent = fmtPerf(profitSum); tdP.title = '毛利加和'; tr.appendChild(tdP);
       tr.appendChild(el('td'));
-      const tdC = el('td', 'num'); tdC.textContent = fmtPerf(commSum); tdC.title = '提成加和（向上百位取整）'; tr.appendChild(tdC);
+      const tdC = el('td', 'num'); tdC.textContent = fmtPerf(commSum); tdC.title = '提成加和（三个月提成相加后向上百位取整）'; tr.appendChild(tdC);
       tbody.appendChild(tr);
     }
     tbl.appendChild(tbody);
@@ -2826,17 +2855,14 @@
       grid.appendChild(w);
       return input;
     };
-    const iName = mkField('导入名称', (() => { const i = el('input'); i.placeholder = '例如：11月业绩（给这次导入起个名字）'; return i; })(), true);
     const iYear = mkField('年', (() => { const i = el('input'); i.placeholder = '2026'; i.inputMode = 'numeric'; return i; })());
     const iMonth = mkField('月', (() => { const i = el('input'); i.placeholder = '11'; i.inputMode = 'numeric'; return i; })());
     const fi = mkField('Excel 文件', (() => { const i = el('input'); i.type = 'file'; i.accept = '.xls,.xlsx'; return i; })(), true);
     const bOk = el('button', 'primary', '导入');
     bOk.onclick = async () => {
       const f = fi.files && fi.files[0];
-      const name = iName.value.trim();
       const year = iYear.value.trim();
       const month = iMonth.value.trim();
-      if (!name) { alert('请填写导入名称'); return; }
       if (!/^\d{4}$/.test(year)) { alert('年份须为 4 位数字，如 2026'); return; }
       if (!/^\d{1,2}$/.test(month) || Number(month) < 1 || Number(month) > 12) { alert('月份须为 1-12'); return; }
       if (!f) { alert('请选择 Excel 文件'); return; }
@@ -2848,7 +2874,7 @@
           r.onerror = () => reject(new Error('读取文件失败'));
           r.readAsDataURL(f);
         });
-        await api('POST', '/api/perf-item', { action: 'import', type, name, year, month, dataBase64: b64 });
+        await api('POST', '/api/perf-item', { action: 'import', type, year, month, dataBase64: b64 });
         closeModal();
         perfData = null;
         loadPerf();
@@ -3079,11 +3105,14 @@
       bar.appendChild(bEdit);
       box.appendChild(bar);
     }
-    const rows = d.rows || [];
+    const rows = [...(d.rows || [])].sort((a, b) => (a.by === b.by
+      ? (a.date === b.date ? 0 : (a.date > b.date ? 1 : -1))
+      : String(a.by).localeCompare(String(b.by), 'zh'))); // 先按人名，人名内部按日期正序
     if (!rows.length) {
       box.appendChild(el('div', 'modal-hint', '还没有款项记录' + (d.canAdmin ? '，点上方「修改款项」添加' : '')));
       return;
     }
+    const payNum = (s) => { const n = Number(String(s || '').replace(/,/g, '')); return Number.isFinite(n) ? n : 0; };
     const tbl = el('table', 'stock-table pay-table');
     const trh = el('tr');
     ['经手人', '日期', '公司', '金额', '备注'].forEach((h) => trh.appendChild(el('th', '', h)));
@@ -3091,11 +3120,28 @@
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
+    let curBy = null;
+    let curSum = 0;
+    const flushTotal = () => {
+      if (curBy === null) return;
+      const tr = el('tr', 'pay-total-row');
+      const tdL = el('td'); tdL.colSpan = 3; tdL.textContent = '合计（' + curBy + '）'; tr.appendChild(tdL);
+      const tdA = el('td', 'num'); tdA.textContent = fmtPerf(curSum); tr.appendChild(tdA);
+      tr.appendChild(el('td'));
+      tbody.appendChild(tr);
+    };
     rows.forEach((r) => {
+      if (r.by !== curBy) {
+        flushTotal();
+        curBy = r.by;
+        curSum = 0;
+      }
+      curSum += payNum(r.amount);
       const tr = el('tr');
       [r.by, r.date, r.company, r.amount, r.note].forEach((v) => { const td = el('td'); td.textContent = v || ''; tr.appendChild(td); });
       tbody.appendChild(tr);
     });
+    flushTotal();
     tbl.appendChild(tbody);
     box.appendChild(tbl);
   }
@@ -3131,7 +3177,7 @@
         ['date', 'company', 'amount', 'note'].forEach((k) => {
           const td = el('td');
           const inp = stockCellInput(r[k] || '', () => { r[k] = inp.value; });
-          if (k === 'date') inp.placeholder = 'YYYY-MM-DD';
+          if (k === 'date') { inp.type = 'date'; inp.style.width = '150px'; } // 日历选择
           td.appendChild(inp);
           tr.appendChild(td);
         });
