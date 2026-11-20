@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-68（debug 修复：红字透传/无库存权限 roleText/季度提成=各月加和取整/业绩按年月正序无名称/序号居中/合计取整/拖拽排序/款项分组合计+日历）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-69（季度统计独立黄表/按人加和/负提成归0/无库存崩溃修复/序号居中CSS优先级/权限区可收起）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2648,10 +2648,19 @@
       });
     };
     renderOrd();
-    // admin：无库存产品统计的修改权限（在所有成员中勾选；admin 本身始终有权限）
+    // admin：无库存产品统计的修改权限（在所有成员中勾选；admin 本身始终有权限）——可收起/展开
     if (me && me.role === 'admin') {
-      body.appendChild(el('div', 'settings-label', '「无库存产品统计」修改权限'));
+      const headRow = el('div', 'settings-collapse');
+      const arrow = el('span', 'settings-arrow', '▾');
+      headRow.appendChild(arrow);
+      headRow.appendChild(el('span', 'settings-collapse-title', '「无库存产品统计」修改权限'));
       const secNs = el('div', 'settings-section');
+      headRow.onclick = () => {
+        const open = secNs.style.display !== 'none';
+        secNs.style.display = open ? 'none' : '';
+        arrow.textContent = open ? '▸' : '▾'; // 点击收起/展开
+      };
+      body.appendChild(headRow);
       body.appendChild(secNs);
       try {
         const [rNs, rUs] = await Promise.all([api('GET', '/api/nostock'), api('GET', '/api/users')]);
@@ -2774,7 +2783,85 @@
       box.appendChild(el('div', 'modal-hint', perfTab === 'perf' ? '还没有月业绩记录（由管理员导入）' : '还没有月到款记录（由管理员导入）'));
       return;
     }
-    list.forEach((im) => box.appendChild(renderPerfBlock(im, d.canAdmin)));
+    list.forEach((im) => {
+      box.appendChild(renderPerfBlock(im, d.canAdmin));
+      if (type === 'pay' && Number(im.month) % 3 === 0) box.appendChild(renderQuarterBlock(im, d.canAdmin)); // 季度末月后面跟独立季度统计块
+    });
+  }
+
+  // 季度统计块：独立黄色表格，格式与月度完全相同（业务员|数量|金额|成本|毛利|毛利率|提成）。
+  // 每行=一个业务员在该季度的加和（同年月多次导入全部累加）；毛利率=毛利加和÷金额加和×100 重新计算；
+  // 提成=该人三个月月提成相加后向上百位取整，负数写 0（月度表不受影响，仍允许负数）。
+  // admin 额外有一行「季度总计」（毛利加和+提成加和）；非 admin 只看到自己的行，无总计行。
+  function renderQuarterBlock(im, canAdmin) {
+    const qEnd = Number(im.month);
+    const qStart = qEnd - 2;
+    const all = ((perfData && perfData.items) || []).filter((x) => x.type === 'pay' && Number(x.year) === Number(im.year) && Number(x.month) >= qStart && Number(x.month) <= qEnd);
+    // 按业务员聚合
+    const agg = {};
+    const monthProfit = {}; // 全体按月毛利（供校验/备用）
+    all.forEach((x) => {
+      monthProfit[x.month] = (monthProfit[x.month] || 0) + (x.rows || []).reduce((s, r) => s + perfNum(r.profit), 0);
+      (x.rows || []).forEach((r) => {
+        if (!agg[r.sales]) agg[r.sales] = { qty: 0, amount: 0, cost: 0, profit: 0 };
+        agg[r.sales].qty += perfNum(r.qty);
+        agg[r.sales].amount += perfNum(r.amount);
+        agg[r.sales].cost += perfNum(r.cost);
+        agg[r.sales].profit += perfNum(r.profit);
+      });
+    });
+    const names = Object.keys(agg).sort((a, b) => a.localeCompare(b, 'zh'));
+    const wrap = el('div', 'perf-block perf-quarter-block');
+    const head = el('div', 'perf-block-head');
+    head.appendChild(el('span', 'perf-block-title', im.year + ' 年第 ' + (qEnd / 3) + ' 季度统计（' + qStart + '-' + qEnd + ' 月）'));
+    wrap.appendChild(head);
+    const tbl = el('table', 'stock-table perf-table perf-quarter-table');
+    const trh = el('tr');
+    ['业务员', '数量', '金额', '成本', '毛利', '毛利率', '提成'].forEach((h) => trh.appendChild(el('th', '', h)));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    let totalProfit = 0;
+    let totalComm = 0;
+    names.forEach((n) => {
+      const a = agg[n];
+      const rate = a.amount !== 0 ? (a.profit / a.amount) * 100 : 0;
+      // 该人季度提成：逐月计算月提成（月毛利=该人在该月的加和）相加，再向上百位取整；负数写 0。
+      // 该月完全没有导入过 → 不参与加和（不算 0 毛利的负提成）；该月导入过但此人无行 → 按月毛利 0 算
+      let personComm = 0;
+      for (let m = qStart; m <= qEnd; m++) {
+        if (monthProfit[m] === undefined) continue;
+        const mp = all.filter((x) => Number(x.month) === m).reduce((s, x) => s + (x.rows || []).filter((r) => r.sales === n).reduce((t, r) => t + perfNum(r.profit), 0), 0);
+        personComm += perfComm(mp);
+      }
+      const comm = Math.max(0, ceil100(personComm));
+      totalProfit += a.profit;
+      totalComm += comm;
+      const tr = el('tr');
+      const mk = (text) => { const td = el('td'); td.textContent = text; tr.appendChild(td); };
+      mk(n);
+      mk(fmtQty(a.qty));
+      mk(fmtPerf(a.amount));
+      mk(fmtPerf(a.cost));
+      mk(fmtPerf(a.profit));
+      mk(rate.toFixed(2));
+      mk(fmtPerf(comm));
+      tbody.appendChild(tr);
+    });
+    if (canAdmin) {
+      const grandComm = ceil100(Object.keys(monthProfit).reduce((s, m) => s + perfComm(monthProfit[m]), 0));
+      const tr = el('tr', 'perf-quarter-total');
+      const tdL = el('td'); tdL.colSpan = 4; tdL.textContent = '季度总计'; tr.appendChild(tdL);
+      const tdP = el('td', 'num'); tdP.textContent = fmtPerf(totalProfit); tr.appendChild(tdP);
+      tr.appendChild(el('td'));
+      const tdC = el('td', 'num'); tdC.textContent = fmtPerf(Math.max(0, grandComm)); tdC.title = '季度提成总计（三个月提成加和向上百位取整，负数为 0）'; tr.appendChild(tdC);
+      tbody.appendChild(tr);
+    }
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+    if (!names.length) wrap.appendChild(el('div', 'modal-hint', '该季度还没有可统计的数据'));
+    return wrap;
   }
 
   function renderPerfBlock(im, canAdmin) {
@@ -2814,29 +2901,6 @@
       if (isPay) mk(fmtPerf(perfComm(perfNum(r.profit))));
       tbody.appendChild(tr);
     });
-    // 季度加和行：显示在季度末月（3/6/9/12）这次导入的表格底部；
-    // 毛利加和=该季度全部导入毛利相加（同年月多次导入全部累加）；
-    // 提成加和=三个月各自的月提成（月毛利总和×0.9−30000）×0.3 相加，再向上百位取整
-    if (isPay && Number(im.month) % 3 === 0) {
-      const qEnd = Number(im.month);
-      const qStart = qEnd - 2;
-      const all = ((perfData && perfData.items) || []).filter((x) => x.type === 'pay' && Number(x.year) === Number(im.year) && Number(x.month) >= qStart && Number(x.month) <= qEnd);
-      const monthProfit = {};
-      all.forEach((x) => {
-        monthProfit[x.month] = (monthProfit[x.month] || 0) + (x.rows || []).reduce((s, r) => s + perfNum(r.profit), 0);
-      });
-      const profitSum = Object.keys(monthProfit).reduce((s, m) => s + monthProfit[m], 0);
-      const commSum = ceil100(Object.keys(monthProfit).reduce((s, m) => s + perfComm(monthProfit[m]), 0));
-      const tr = el('tr', 'perf-quarter-row');
-      const tdL = el('td');
-      tdL.colSpan = 4;
-      tdL.textContent = im.year + ' 年第 ' + (qEnd / 3) + ' 季度加和（' + qStart + '-' + qEnd + ' 月全部导入）';
-      tr.appendChild(tdL);
-      const tdP = el('td', 'num'); tdP.textContent = fmtPerf(profitSum); tdP.title = '毛利加和'; tr.appendChild(tdP);
-      tr.appendChild(el('td'));
-      const tdC = el('td', 'num'); tdC.textContent = fmtPerf(commSum); tdC.title = '提成加和（三个月提成相加后向上百位取整）'; tr.appendChild(tdC);
-      tbody.appendChild(tr);
-    }
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
     return wrap;
@@ -2942,7 +3006,7 @@
       const bAdd = el('button', 'primary', '＋ 新增一行');
       bAdd.onclick = () => { rows.push({ name: '', mp1: '', mp2: '', mp3: '', price: '' }); rebuild(); };
       tdAdd.appendChild(bAdd);
-      tr.appendChild(tdAdd);
+      trAdd.appendChild(tdAdd);
       tbody.appendChild(trAdd);
       tbl.appendChild(tbody);
       body.appendChild(tbl);

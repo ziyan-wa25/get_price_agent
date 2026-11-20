@@ -676,7 +676,8 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .side-btn-warn { color: #b3423a; border-color: #e4b6b1; font-weight: 600; }
 .side-btn-warn:hover { background: #fdf3f2; border-color: #b3423a; }
 /* 库存表：序号列（极窄、数字居中，占用货品名称空间）/ admin 修改 24h 红字 / 合计行 */
-.col-seq { width: 34px; min-width: 34px; color: #8a93a6; font-size: 12px; text-align: center; }
+/* 注意：.price-content td 的 text-align:left 优先级更高，必须用 .stock-table .col-seq 才能赢 */
+.stock-table .col-seq { width: 34px; min-width: 34px; color: #8a93a6; font-size: 12px; text-align: center; }
 .stock-mod-red { color: #c0392b !important; font-weight: 600; }
 .stock-total-row td { background: #f4f6fb; font-weight: 700; }
 /* 价格页签：激活态悬停时保持蓝色不泛白 */
@@ -688,12 +689,20 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .order-row.dragging { opacity: .45; }
 /* 款项统计：每人合计行加粗 */
 .pay-total-row td { font-weight: 700; background: #f4f6fb; }
+/* 设置：无库存权限区可收起/展开 */
+.settings-collapse { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; cursor: pointer; user-select: none; font-weight: 600; font-size: 13px; color: #3a4150; }
+.settings-arrow { color: #8a93a6; font-size: 12px; }
+.settings-collapse:hover .settings-collapse-title { color: #4d6bfe; }
 /* 业绩报表 */
 .perf-block { margin-bottom: 20px; }
 .perf-block-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; }
 .perf-block-title { font-weight: 700; font-size: 14px; }
 .perf-table th, .perf-table td { text-align: center; white-space: nowrap; padding: 7px 12px; }
 .perf-quarter-row td { background: #fff7e6; font-weight: 700; }
+/* 季度统计块：沿用黄色，格式与月度表一致 */
+.perf-quarter-block .perf-quarter-table th, .perf-quarter-block .perf-quarter-table td { background: #fff7e6; }
+.perf-quarter-block .perf-quarter-table thead th { background: #ffefc2; }
+.perf-quarter-total td { background: #ffefc2 !important; font-weight: 700; }
 /* 无库存产品统计弹窗 */
 .nostock-table .edit-input { width: 110px; }
 .nostock-table td:first-child .edit-input { width: 170px; }
