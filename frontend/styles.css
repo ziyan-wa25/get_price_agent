@@ -699,6 +699,8 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .perf-block-title { font-weight: 700; font-size: 14px; }
 .perf-table th, .perf-table td { text-align: center; white-space: nowrap; padding: 7px 12px; }
 .perf-quarter-row td { background: #fff7e6; font-weight: 700; }
+/* 月统计行（每月表格底部）：加粗+浅灰底 */
+.perf-month-total td { background: #f4f6fb; font-weight: 700; }
 /* 季度统计块：沿用黄色，格式与月度表一致 */
 .perf-quarter-block .perf-quarter-table th, .perf-quarter-block .perf-quarter-table td { background: #fff7e6; }
 .perf-quarter-block .perf-quarter-table thead th { background: #ffefc2; }

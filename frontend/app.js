@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-69（季度统计独立黄表/按人加和/负提成归0/无库存崩溃修复/序号居中CSS优先级/权限区可收起）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-70（月统计行/到款考核剔除王海强与财务专用账号/批量修改空格误报修复/页签切换刷新）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1449,7 +1449,9 @@
       if (!e) return;
       const orig = stockOrigRaw(it);
       const fields = ['name', 'qty', 'cost', 'price', 'note', 'wh'];
-      if (fields.some((f) => String(e[f]).trim() !== orig[f])) {
+      // 两边都 trim 后再比较：Excel 导入常带首尾空格，否则刚进批量修改就会误报“已修改”
+      const eq = (f) => String(e[f] == null ? '' : e[f]).trim() === String(orig[f] == null ? '' : orig[f]).trim();
+      if (!fields.every(eq)) {
         out.push({ name: it.name, item: { name: String(e.name).trim(), qty: e.qty, cost: e.cost, price: String(e.price).trim(), note: e.note, wh: String(e.wh || '').trim() } });
       }
     });
@@ -1477,7 +1479,8 @@
     const out = [];
     (stockData.items || []).forEach((it) => {
       if (stockWhEdits[it.name] === undefined) return;
-      if (String(stockWhEdits[it.name]).trim() !== String(it.wh == null ? '' : it.wh)) {
+      // 两边都 trim 后再比较（同批量修改：原始值可能带首尾空格）
+      if (String(stockWhEdits[it.name]).trim() !== String(it.wh == null ? '' : it.wh).trim()) {
         out.push({ name: it.name, wh: String(stockWhEdits[it.name]).trim() });
       }
     });
@@ -2765,7 +2768,7 @@
     const bar = el('div', 'stock-toolbar');
     const mkTab = (key, label) => {
       const b = el('button', 'price-tab' + (perfTab === key ? ' active' : ''), label);
-      b.onclick = () => { perfTab = key; renderPerfPage(); };
+      b.onclick = () => { perfTab = key; renderPerfPage(); refreshPerf(); }; // 切换页签时后台刷新，避免刚导入的数据看不到
       bar.appendChild(b);
     };
     mkTab('perf', '月业绩统计');
@@ -2898,9 +2901,32 @@
       mk(fmtPerf(perfNum(r.cost)));
       mk(fmtPerf(perfNum(r.profit)));
       mk(r.rate || '');
-      if (isPay) mk(fmtPerf(perfComm(perfNum(r.profit))));
+      if (isPay) mk(fmtPerf(perfNum(perfComm(perfNum(r.profit)))));
       tbody.appendChild(tr);
     });
+    // 月统计行（每月表格底部）：数量/金额/成本/毛利 加和；毛利率=毛利加和÷金额加和×100 重算；
+    // 到款考核的提成=各行提成相加（不取整）；月业绩统计包含王海强/财务专用账号（剔除名单仅作用于到款考核）
+    const rowsAll = im.rows || [];
+    if (rowsAll.length) {
+      const s = rowsAll.reduce((acc, r) => {
+        acc.qty += perfNum(r.qty);
+        acc.amount += perfNum(r.amount);
+        acc.cost += perfNum(r.cost);
+        acc.profit += perfNum(r.profit);
+        return acc;
+      }, { qty: 0, amount: 0, cost: 0, profit: 0 });
+      const rate = s.amount !== 0 ? (s.profit / s.amount) * 100 : 0;
+      const tr = el('tr', 'perf-month-total');
+      const mk = (text) => { const td = el('td'); td.textContent = text; tr.appendChild(td); };
+      mk('月统计');
+      mk(fmtQty(s.qty));
+      mk(fmtPerf(s.amount));
+      mk(fmtPerf(s.cost));
+      mk(fmtPerf(s.profit));
+      mk(rate.toFixed(2));
+      if (isPay) mk(fmtPerf(rowsAll.reduce((t, r) => t + perfComm(perfNum(r.profit)), 0)));
+      tbody.appendChild(tr);
+    }
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
     return wrap;
