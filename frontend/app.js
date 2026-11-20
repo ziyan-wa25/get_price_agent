@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-71（红字逐列对应/业绩表人名拼音排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-72（无库存查看/批量修改两段式、款项统计页面内批量修改）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2996,24 +2996,43 @@
     renderNoStockBody();
   }
 
+  let noStockBatch = false; // 无库存批量修改模式：平时打开为查看，点「批量修改」才进入编辑（同库存表）
+
   function renderNoStockBody() {
     const body = $('#modal-body');
     body.innerHTML = '';
     const d = noStockData || { items: [], canEdit: false };
-    body.appendChild(el('div', 'modal-hint', d.canEdit
-      ? '批量修改：直接在表格里改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'
-      : '只读查看（修改权限由管理员在设置中指定）。'));
     const rows = (d.items || []).map((r) => ({ ...r }));
+    const editing = d.canEdit && noStockBatch;
     const tbl = el('table', 'stock-table nostock-table');
     const trh = el('tr');
     ['名称', '市场价1', '市场价2', '市场价3', '定价'].forEach((h) => trh.appendChild(el('th', '', h)));
-    if (d.canEdit) trh.appendChild(el('th', '', '删'));
+    if (editing) trh.appendChild(el('th', '', '删'));
     const thead = el('thead');
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
-    if (d.canEdit) {
-      const rebuild = () => { noStockData = { ...d, items: rows }; renderNoStockBody(); };
+    if (editing) {
+      // 批量修改模式（同库存表）：直接改/增/删行，最后「保存全部」一次性生效
+      const bar = el('div', 'stock-toolbar sticky');
+      const bSave = el('button', 'primary', '💾 保存全部');
+      bSave.onclick = async () => {
+        bSave.disabled = true;
+        try {
+          await api('POST', '/api/nostock-item', { action: 'batch', rows });
+          noStockBatch = false;
+          noStockData = null; // 重新拉取，回到查看模式
+          openNoStockModal();
+        } catch (e) { alert(e.message); }
+        finally { bSave.disabled = false; }
+      };
+      const bCancel = el('button', '', '取消');
+      bCancel.onclick = () => { noStockBatch = false; renderNoStockBody(); };
+      bar.appendChild(bSave);
+      bar.appendChild(bCancel);
+      body.appendChild(bar);
+      body.appendChild(el('div', 'modal-hint', '批量修改：直接在表格里改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'));
+      const persist = () => { noStockData = { ...d, items: rows }; }; // 增/删行重渲染前先写回，否则改动丢失
       rows.forEach((r, i) => {
         const tr = el('tr');
         ['name', 'mp1', 'mp2', 'mp3', 'price'].forEach((k) => {
@@ -3024,7 +3043,7 @@
         });
         const tdDel = el('td');
         const bDel = el('button', 'fav-del', '🗑');
-        bDel.onclick = () => { rows.splice(i, 1); rebuild(); };
+        bDel.onclick = () => { rows.splice(i, 1); persist(); renderNoStockBody(); };
         tdDel.appendChild(bDel);
         tr.appendChild(tdDel);
         tbody.appendChild(tr);
@@ -3033,34 +3052,33 @@
       const tdAdd = el('td');
       tdAdd.colSpan = 6;
       const bAdd = el('button', 'primary', '＋ 新增一行');
-      bAdd.onclick = () => { rows.push({ name: '', mp1: '', mp2: '', mp3: '', price: '' }); rebuild(); };
+      bAdd.onclick = () => { rows.push({ name: '', mp1: '', mp2: '', mp3: '', price: '' }); persist(); renderNoStockBody(); };
       tdAdd.appendChild(bAdd);
       trAdd.appendChild(tdAdd);
       tbody.appendChild(trAdd);
       tbl.appendChild(tbody);
       body.appendChild(tbl);
-      const foot = el('div', 'form-row');
-      const bSave = el('button', 'primary', '💾 保存全部');
-      bSave.onclick = async () => {
-        bSave.disabled = true;
-        try {
-          await api('POST', '/api/nostock-item', { action: 'batch', rows });
-          closeModal();
-        } catch (e) { alert(e.message); }
-        finally { bSave.disabled = false; }
-      };
-      foot.appendChild(bSave);
-      body.appendChild(foot);
-    } else {
-      rows.forEach((r) => {
-        const tr = el('tr');
-        [r.name, r.mp1, r.mp2, r.mp3, r.price].forEach((v) => { const td = el('td'); td.textContent = v || ''; tr.appendChild(td); });
-        tbody.appendChild(tr);
-      });
-      tbl.appendChild(tbody);
-      body.appendChild(tbl);
-      if (!rows.length) body.appendChild(el('div', 'modal-hint', '暂无数据'));
+      return;
     }
+    // 查看模式（默认）：有权限的人显示「批量修改」入口，点击后才进入编辑
+    if (d.canEdit) {
+      const bar = el('div', 'stock-toolbar');
+      const bEdit = el('button', 'primary', '✏️ 批量修改');
+      bEdit.onclick = () => { noStockBatch = true; renderNoStockBody(); };
+      bar.appendChild(bEdit);
+      body.appendChild(bar);
+      body.appendChild(el('div', 'modal-hint', '查看模式：点「批量修改」进入编辑（批量新增/修改，一次保存全部生效）。'));
+    } else {
+      body.appendChild(el('div', 'modal-hint', '只读查看（修改权限由管理员在设置中指定）。'));
+    }
+    rows.forEach((r) => {
+      const tr = el('tr');
+      [r.name, r.mp1, r.mp2, r.mp3, r.price].forEach((v) => { const td = el('td'); td.textContent = v || ''; tr.appendChild(td); });
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    body.appendChild(tbl);
+    if (!rows.length) body.appendChild(el('div', 'modal-hint', '暂无数据'));
   }
 
   // ---------- 代办事项（每人自己的数据；完成后进历史，按完成时间倒序） ----------
@@ -3165,6 +3183,8 @@
 
   // ---------- 款项统计（admin 维护；非 admin 只看经手人是自己的行） ----------
   let payData = null;
+  let payBatch = false; // 款项统计批量修改模式：在页面里直接批量改（同库存表批量修改），不用弹窗
+  let payEditRows = null; // 批量修改中的整行副本
 
   async function loadPayments() {
     const box = $('#pay-content');
@@ -3189,12 +3209,78 @@
     const info = $('#pay-info');
     info.innerHTML = '';
     info.appendChild(el('span', 'stock-import-time', '款项统计' + ((payData && payData.canAdmin) ? '（admin 可见全部，可修改）' : '（仅显示经手人是你的款项）')));
-    const d = payData || { rows: [], canAdmin: false };
+    const d = payData || { rows: [], canAdmin: false, users: [] };
     box.innerHTML = '';
+    const payNum = (s) => { const n = Number(String(s || '').replace(/,/g, '')); return Number.isFinite(n) ? n : 0; };
+    if (d.canAdmin && payBatch) {
+      // 批量修改模式（界面内联，同库存表批量修改）：悬浮工具条 保存/取消
+      const bar = el('div', 'stock-toolbar sticky');
+      const bSave = el('button', 'primary', '💾 保存全部');
+      bSave.onclick = async () => {
+        bSave.disabled = true;
+        try {
+          const r = await api('POST', '/api/payment-item', { action: 'batch', rows: payEditRows });
+          alert('已保存 ' + r.count + ' 行');
+          payBatch = false;
+          payEditRows = null;
+          payData = null;
+          loadPayments();
+        } catch (e) { alert(e.message); }
+        finally { bSave.disabled = false; }
+      };
+      const bCancel = el('button', '', '取消');
+      bCancel.onclick = () => { payBatch = false; payEditRows = null; renderPayPage(); };
+      bar.appendChild(bSave);
+      bar.appendChild(bCancel);
+      box.appendChild(bar);
+      box.appendChild(el('div', 'modal-hint', '批量修改：经手人必须从系统已有人员中选择；日期必填（点格子用日历选）。改 / 增 / 删完后点「保存全部」一次性生效。'));
+      const tbl = el('table', 'stock-table pay-table');
+      const trh = el('tr');
+      ['经手人', '日期', '公司', '金额', '备注', '删'].forEach((h) => trh.appendChild(el('th', '', h)));
+      const thead = el('thead');
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+      const tbody = el('tbody');
+      payEditRows.forEach((r, i) => {
+        const tr = el('tr');
+        const tdU = el('td');
+        const selU = el('select', 'edit-input pay-select');
+        (d.users || []).forEach((u) => {
+          const op = el('option', '', u);
+          op.value = u;
+          if (u === r.by) op.selected = true;
+          selU.appendChild(op);
+        });
+        selU.onchange = () => { r.by = selU.value; };
+        tdU.appendChild(selU);
+        tr.appendChild(tdU);
+        ['date', 'company', 'amount', 'note'].forEach((k) => {
+          const td = el('td');
+          const inp = stockCellInput(r[k] || '', () => { r[k] = inp.value; });
+          if (k === 'date') { inp.type = 'date'; inp.style.width = '150px'; } // 日历选择
+          td.appendChild(inp);
+          tr.appendChild(td);
+        });
+        const tdDel = el('td');
+        const bDel = el('button', 'fav-del', '🗑');
+        bDel.onclick = () => { payEditRows.splice(i, 1); renderPayPage(); };
+        tdDel.appendChild(bDel);
+        tr.appendChild(tdDel);
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      box.appendChild(tbl);
+      const foot = el('div', 'form-row');
+      const bAdd = el('button', 'primary', '＋ 新增一行');
+      bAdd.onclick = () => { payEditRows.push({ by: (d.users || [])[0] || '', date: '', company: '', amount: '', note: '' }); renderPayPage(); };
+      foot.appendChild(bAdd);
+      box.appendChild(foot);
+      return;
+    }
     if (d.canAdmin) {
       const bar = el('div', 'stock-toolbar');
-      const bEdit = el('button', 'primary', '✏️ 修改款项（批量保存）');
-      bEdit.onclick = openPayEditModal;
+      const bEdit = el('button', 'primary', '✏️ 批量修改');
+      bEdit.onclick = () => { payBatch = true; payEditRows = (d.rows || []).map((r) => ({ ...r })); renderPayPage(); };
       bar.appendChild(bEdit);
       box.appendChild(bar);
     }
@@ -3202,10 +3288,9 @@
       ? (a.date === b.date ? 0 : (a.date > b.date ? 1 : -1))
       : String(a.by).localeCompare(String(b.by), 'zh'))); // 先按人名，人名内部按日期正序
     if (!rows.length) {
-      box.appendChild(el('div', 'modal-hint', '还没有款项记录' + (d.canAdmin ? '，点上方「修改款项」添加' : '')));
+      box.appendChild(el('div', 'modal-hint', '还没有款项记录' + (d.canAdmin ? '，点上方「批量修改」新增' : '')));
       return;
     }
-    const payNum = (s) => { const n = Number(String(s || '').replace(/,/g, '')); return Number.isFinite(n) ? n : 0; };
     const tbl = el('table', 'stock-table pay-table');
     const trh = el('tr');
     ['经手人', '日期', '公司', '金额', '备注'].forEach((h) => trh.appendChild(el('th', '', h)));
@@ -3237,72 +3322,6 @@
     flushTotal();
     tbl.appendChild(tbody);
     box.appendChild(tbl);
-  }
-
-  function openPayEditModal() {
-    openModal('修改款项（一次保存全部）', true);
-    const body = $('#modal-body');
-    const users = (payData && payData.users) || [];
-    const rows = ((payData && payData.rows) || []).map((r) => ({ ...r }));
-    const render = () => {
-      body.innerHTML = '';
-      body.appendChild(el('div', 'modal-hint', '经手人必须从系统已有人员中选择；日期必填（YYYY-MM-DD）。全部修改完后点「保存全部」一次性生效。'));
-      const tbl = el('table', 'stock-table pay-table');
-      const trh = el('tr');
-      ['经手人', '日期', '公司', '金额', '备注', '删'].forEach((h) => trh.appendChild(el('th', '', h)));
-      const thead = el('thead');
-      thead.appendChild(trh);
-      tbl.appendChild(thead);
-      const tbody = el('tbody');
-      rows.forEach((r, i) => {
-        const tr = el('tr');
-        const tdU = el('td');
-        const selU = el('select', 'edit-input pay-select');
-        users.forEach((u) => {
-          const op = el('option', '', u);
-          op.value = u;
-          if (u === r.by) op.selected = true;
-          selU.appendChild(op);
-        });
-        selU.onchange = () => { r.by = selU.value; };
-        tdU.appendChild(selU);
-        tr.appendChild(tdU);
-        ['date', 'company', 'amount', 'note'].forEach((k) => {
-          const td = el('td');
-          const inp = stockCellInput(r[k] || '', () => { r[k] = inp.value; });
-          if (k === 'date') { inp.type = 'date'; inp.style.width = '150px'; } // 日历选择
-          td.appendChild(inp);
-          tr.appendChild(td);
-        });
-        const tdDel = el('td');
-        const bDel = el('button', 'fav-del', '🗑');
-        bDel.onclick = () => { rows.splice(i, 1); render(); };
-        tdDel.appendChild(bDel);
-        tr.appendChild(tdDel);
-        tbody.appendChild(tr);
-      });
-      tbl.appendChild(tbody);
-      body.appendChild(tbl);
-      const foot = el('div', 'form-row');
-      const bAdd = el('button', 'primary', '＋ 新增一行');
-      bAdd.onclick = () => { rows.push({ by: users[0] || '', date: '', company: '', amount: '', note: '' }); render(); };
-      foot.appendChild(bAdd);
-      const bSave = el('button', 'primary', '💾 保存全部');
-      bSave.onclick = async () => {
-        bSave.disabled = true;
-        try {
-          const r = await api('POST', '/api/payment-item', { action: 'batch', rows });
-          alert('已保存 ' + r.count + ' 行');
-          payData = null;
-          closeModal();
-          loadPayments();
-        } catch (e) { alert(e.message); }
-        finally { bSave.disabled = false; }
-      };
-      foot.appendChild(bSave);
-      body.appendChild(foot);
-    };
-    render();
   }
 
   // ---------- 外派预约申请（日期升序、过期自动废弃；客户名/地址按行可见名单；批准仅 admin） ----------
