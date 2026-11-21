@@ -571,8 +571,9 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .fav-del:hover { background: #ffe9e7; }
 .fav-handle { cursor: grab; color: #b6bac2; font-size: 18px; user-select: none; letter-spacing: 1px; }
 .fav-handle:active { cursor: grabbing; color: #4d6bfe; }
+body.ns-dragging { cursor: grabbing !important; user-select: none; }
 .nostock-table .col-drag { width: 36px; text-align: center; white-space: nowrap; }
-.nostock-table .drag-ns { cursor: grab; user-select: none; color: #98a3b3; font-size: 16px; padding: 0 6px; display: inline-block; }
+.nostock-table .drag-ns { cursor: grab; user-select: none; color: #98a3b3; font-size: 16px; padding: 0 6px; display: inline-block; touch-action: none; }
 .nostock-table .drag-ns:active { cursor: grabbing; color: #4d6bfe; }
 .nostock-table tr.dragging td { opacity: .45; }
 

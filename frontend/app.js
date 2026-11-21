@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-78（无库存批量修改支持拖 ⠿ 滑块排序行）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-79（拖动排序改 pointer 实现+无库存预加载秒开+密码安全策略强制改密）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -148,20 +148,30 @@
     }
   }
 
-  // 强制修改初始密码：改成功前不进入系统
+  // 强制修改密码（未按安全规则设置过）：改成功前不进入系统
+  function pwdPolicyClientError(pw) {
+    const p = String(pw || '');
+    if (p.length < 10) return '密码需至少 10 位';
+    if (!/[a-z]/.test(p) || !/[A-Z]/.test(p)) return '密码需同时包含大写字母和小写字母';
+    if (!/[0-9]/.test(p)) return '密码需包含数字';
+    if (!/[^A-Za-z0-9]/.test(p)) return '密码需包含符号（如 !@#$% 等）';
+    return '';
+  }
+
   function forceChangePassword(prefillOld) {
-    openModal('安全要求：请先修改初始密码');
+    openModal('安全要求：请先设置新密码');
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '检测到该账号仍在使用初始密码。为安全起见，必须修改密码后才能使用系统。'));
-    const iOld = el('input'); iOld.type = 'password'; iOld.placeholder = '当前密码（初始密码）'; iOld.value = prefillOld || '';
-    const iNew = el('input'); iNew.type = 'password'; iNew.placeholder = '新密码（至少 6 位，不能与当前密码相同）';
+    body.appendChild(el('div', 'modal-hint', '为保障账号安全，所有账号都必须设置符合规则的新密码后才能使用系统：至少 10 位，且同时包含大写字母、小写字母、数字和符号（如 !@#$%）。'));
+    const iOld = el('input'); iOld.type = 'password'; iOld.placeholder = '当前密码'; iOld.value = prefillOld || '';
+    const iNew = el('input'); iNew.type = 'password'; iNew.placeholder = '新密码（≥10位，含大小写字母+数字+符号）';
     const iNew2 = el('input'); iNew2.type = 'password'; iNew2.placeholder = '确认新密码';
     body.appendChild(iOld); body.appendChild(iNew); body.appendChild(iNew2);
     const foot = el('div', 'form-row');
     const bOk = el('button', 'primary', '修改密码并进入系统');
     bOk.onclick = async () => {
       const np = iNew.value;
-      if (np.length < 6) { alert('新密码至少 6 位'); return; }
+      const perr = pwdPolicyClientError(np);
+      if (perr) { alert(perr); return; }
       if (np !== iNew2.value) { alert('两次输入的新密码不一致'); return; }
       if (np === iOld.value) { alert('新密码不能与当前密码相同'); return; }
       bOk.disabled = true;
@@ -215,7 +225,7 @@
 
   function prefetchAll() {
     // 登录后后台并行预取各页数据（全部只读 GET）：配合各页“缓存秒开”，切换页面不再等“加载中”
-    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, loadPerf, loadTodos, loadPayments, prefetchFavUsers].forEach((fn) => {
+    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, loadPerf, loadTodos, loadPayments, prefetchFavUsers, prefetchNoStock].forEach((fn) => {
       try { fn(); } catch (e) { /* 预取失败不打扰用户，切页时仍会正常加载 */ }
     });
     if (me && me.role === 'admin') {
@@ -3010,9 +3020,24 @@
   // ---------- 无库存产品统计（所有人可见同库存表；修改=admin+设置授权用户；批量改后一次性保存） ----------
   let noStockData = null;
 
+  // 无库存数据预取：进入系统即后台拉取，点开弹窗直接秒显；弹窗开着时后台刷新不覆盖编辑状态
+  function prefetchNoStock() {
+    api('GET', '/api/nostock').then((d) => { if (!noStockBatch) noStockData = d; }).catch(() => {});
+  }
+
   async function openNoStockModal() {
     openModal('无库存产品统计', true);
     const body = $('#modal-body');
+    if (noStockData) { // 有预取缓存：先秒显，再后台刷新（SWR）
+      renderNoStockBody();
+      api('GET', '/api/nostock').then((d) => {
+        if (noStockBatch) return; // 正在批量编辑时不覆盖
+        noStockData = d;
+        const mb = $('#modal-body');
+        if (mb && mb.querySelector('.nostock-table')) renderNoStockBody(); // 弹窗仍开着才重渲染
+      }).catch(() => {});
+      return;
+    }
     body.appendChild(el('div', 'modal-hint', '加载中…'));
     try {
       noStockData = await api('GET', '/api/nostock');
@@ -3062,27 +3087,61 @@
       body.appendChild(bar);
       body.appendChild(el('div', 'modal-hint', '批量修改：拖 ⠿ 滑块可调整行顺序；直接改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'));
       const persist = () => { noStockData = { ...d, items: rows }; }; // 增/删行重渲染前先写回，否则改动丢失
-      let dragTr = null; // 拖动排序（滑块 ⠿）：只挪 DOM 与 rows 顺序，不重渲染，不打断输入
+      let dragTr = null; // 拖动排序（滑块 ⠿，pointer 事件实现，桌面/触屏均可拖）：只挪 DOM 与 rows 顺序，不重渲染，不打断输入
       rows.forEach((r) => {
         const tr = el('tr');
         tr._nsRow = r;
         const tdDrag = el('td', 'col-drag');
         const grip = el('span', 'drag-ns', '⠿');
-        grip.title = '拖动调整顺序（保存全部后生效）';
-        grip.draggable = true;
-        grip.addEventListener('dragstart', (e) => {
+        grip.title = '按住拖动调整顺序（保存全部后生效）';
+        grip.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'mouse' && e.button !== 0) return;
+          e.preventDefault(); // 阻止选中文字/滚动
           dragTr = tr;
           tr.classList.add('dragging');
-          try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'ns'); } catch (err) { /* 忽略 */ }
-        });
-        grip.addEventListener('dragend', () => {
-          tr.classList.remove('dragging');
-          if (!dragTr) return;
-          const trs = [...tbody.children].filter((x) => x._nsRow); // 按当前 DOM 顺序重排 rows
-          const reordered = trs.map((x) => x._nsRow);
-          rows.length = 0;
-          rows.push(...reordered);
-          dragTr = null;
+          document.body.classList.add('ns-dragging');
+          try { grip.setPointerCapture(e.pointerId); } catch (err) { /* 老浏览器忽略 */ }
+          const move = (ev) => {
+            if (!dragTr) return;
+            let targetTr = null;
+            try {
+              const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+              if (hit && hit.closest && tbody.contains(hit.closest('.nostock-table tbody tr'))) targetTr = hit.closest('.nostock-table tbody tr');
+            } catch (err) { /* jsdom 等无实现，走退化方案 */ }
+            if (!targetTr) {
+              // 退化方案：按 clientY 找最近的行
+              let best = null, bestDist = Infinity;
+              [...tbody.children].forEach((x) => {
+                if (!x._nsRow || x === dragTr) return;
+                const rc = x.getBoundingClientRect();
+                const mid = rc.top + rc.height / 2;
+                const dist = Math.abs((ev.clientY || 0) - mid);
+                if (dist < bestDist) { bestDist = dist; best = x; }
+              });
+              targetTr = best;
+            }
+            if (!targetTr || targetTr === dragTr) return;
+            const rect = targetTr.getBoundingClientRect();
+            const before = ((ev.clientY || 0) - rect.top) < rect.height / 2; // 上半=插到前面，下半=插到后面
+            tbody.insertBefore(dragTr, before ? targetTr : targetTr.nextSibling);
+          };
+          const up = () => {
+            grip.removeEventListener('pointermove', move);
+            grip.removeEventListener('pointerup', up);
+            grip.removeEventListener('pointercancel', up);
+            tr.classList.remove('dragging');
+            document.body.classList.remove('ns-dragging');
+            if (dragTr) {
+              const trs = [...tbody.children].filter((x) => x._nsRow); // 按当前 DOM 顺序重排 rows
+              const reordered = trs.map((x) => x._nsRow);
+              rows.length = 0;
+              rows.push(...reordered);
+            }
+            dragTr = null;
+          };
+          grip.addEventListener('pointermove', move);
+          grip.addEventListener('pointerup', up);
+          grip.addEventListener('pointercancel', up);
         });
         tdDrag.appendChild(grip);
         tr.appendChild(tdDrag);
@@ -3097,13 +3156,6 @@
         bDel.onclick = () => { const i2 = rows.indexOf(r); if (i2 >= 0) rows.splice(i2, 1); persist(); renderNoStockBody(); };
         tdDel.appendChild(bDel);
         tr.appendChild(tdDel);
-        tr.addEventListener('dragover', (e) => {
-          if (!dragTr || dragTr === tr) return;
-          e.preventDefault();
-          const rect = tr.getBoundingClientRect();
-          const before = (e.clientY - rect.top) < rect.height / 2; // 上半=插到前面，下半=插到后面
-          tbody.insertBefore(dragTr, before ? tr : tr.nextSibling);
-        });
         tbody.appendChild(tr);
       });
       const trAdd = el('tr');
@@ -4823,7 +4875,8 @@
     body.appendChild(foot);
     bOk.onclick = async () => {
       const np = inNew.value;
-      if (np.length < 6) { alert('新密码至少 6 位'); return; }
+      const perr = pwdPolicyClientError(np);
+      if (perr) { alert('新密码不合规：' + perr); return; }
       if (np !== inNew2.value) { alert('两次输入的新密码不一致'); return; }
       bOk.disabled = true;
       try {
@@ -4839,7 +4892,7 @@
     openModal('修改密码');
     const body = $('#modal-body');
     const inOld = el('input'); inOld.type = 'password'; inOld.placeholder = '原密码';
-    const inNew = el('input'); inNew.type = 'password'; inNew.placeholder = '新密码（至少6位）';
+    const inNew = el('input'); inNew.type = 'password'; inNew.placeholder = '新密码（≥10位，含大小写字母+数字+符号）';
     const inNew2 = el('input'); inNew2.type = 'password'; inNew2.placeholder = '再输一遍新密码';
     const btn = el('button', '', '确认修改');
     const row = el('div');
@@ -4847,6 +4900,8 @@
     row.appendChild(btn);
     body.appendChild(row);
     btn.onclick = async () => {
+      const perr = pwdPolicyClientError(inNew.value);
+      if (perr) { alert(perr); return; }
       if (inNew.value !== inNew2.value) { alert('两次输入的新密码不一致'); return; }
       btn.disabled = true;
       try {
