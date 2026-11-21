@@ -571,10 +571,6 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .fav-del:hover { background: #ffe9e7; }
 .fav-handle { cursor: grab; color: #b6bac2; font-size: 18px; user-select: none; letter-spacing: 1px; }
 .fav-handle:active { cursor: grabbing; color: #4d6bfe; }
-body.ns-dragging { cursor: grabbing !important; user-select: none; }
-.ns-drag-ghost-table { pointer-events: none; z-index: 10050; opacity: .95; box-shadow: 0 10px 26px rgba(30, 40, 70, .28); border-radius: 8px; background: #fff; table-layout: fixed; }
-.ns-drag-ghost-table td { background: #fff !important; }
-tr.ns-drag-src td { visibility: hidden; }
 .ns-search-row { display: flex; justify-content: flex-end; margin: 0 0 8px; }
 .ns-search-row .ns-search { width: 230px; padding: 8px 11px; border: 1px solid #d9dce1; border-radius: 8px; font-size: 13px; outline: none; }
 .ns-search-row .ns-search:focus { border-color: #4d6bfe; }
