@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-81（密码策略修正：原本合规的旧密码免改放行，登录时自动判定；不合规才两步式改密）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-82（无库存拖动排序实时化：影子行跟随指针+其余行实时让位，保存仍统一在保存全部）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3114,7 +3114,7 @@
       body.appendChild(bar);
       body.appendChild(el('div', 'modal-hint', '批量修改：拖 ⠿ 滑块可调整行顺序；直接改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'));
       const persist = () => { noStockData = { ...d, items: rows }; }; // 增/删行重渲染前先写回，否则改动丢失
-      let dragTr = null; // 拖动排序（滑块 ⠿，pointer 事件实现，桌面/触屏均可拖）：只挪 DOM 与 rows 顺序，不重渲染，不打断输入
+      let dragTr = null; // 拖动排序（滑块 ⠿，pointer 实时拖动：影子行跟随指针、其余行实时让位；数据只挪顺序，保存统一在「保存全部」）
       rows.forEach((r) => {
         const tr = el('tr');
         tr._nsRow = r;
@@ -3125,18 +3125,38 @@
           if (e.pointerType === 'mouse' && e.button !== 0) return;
           e.preventDefault(); // 阻止选中文字/滚动
           dragTr = tr;
-          tr.classList.add('dragging');
           document.body.classList.add('ns-dragging');
           try { grip.setPointerCapture(e.pointerId); } catch (err) { /* 老浏览器忽略 */ }
+          // 浮动影子：克隆当前行，实时跟随指针
+          const rect0 = tr.getBoundingClientRect();
+          const grabOffsetY = (e.clientY || 0) - rect0.top;
+          const ghostWrap = document.createElement('div');
+          const gt = document.createElement('table');
+          gt.className = 'stock-table nostock-table ns-drag-ghost-table';
+          const gtBody = document.createElement('tbody');
+          const gtr = tr.cloneNode(true);
+          [...tr.children].forEach((td, i) => { const g = gtr.children[i]; if (g && td.offsetWidth) g.style.width = td.offsetWidth + 'px'; });
+          gtBody.appendChild(gtr);
+          gt.appendChild(gtBody);
+          ghostWrap.appendChild(gt);
+          ghostWrap.style.position = 'fixed';
+          ghostWrap.style.left = rect0.left + 'px';
+          ghostWrap.style.top = rect0.top + 'px';
+          ghostWrap.style.width = rect0.width + 'px';
+          document.body.appendChild(ghostWrap);
+          tr.classList.add('ns-drag-src'); // 原行占位隐形，其余行实时让位
           const move = (ev) => {
             if (!dragTr) return;
+            ghostWrap.style.top = ((ev.clientY || 0) - grabOffsetY) + 'px'; // 影子实时跟随
             let targetTr = null;
             try {
               const hit = document.elementFromPoint(ev.clientX, ev.clientY);
-              if (hit && hit.closest && tbody.contains(hit.closest('.nostock-table tbody tr'))) targetTr = hit.closest('.nostock-table tbody tr');
+              if (hit && hit.closest && tbody.contains(hit.closest('.nostock-table tbody tr')) && !hit.closest('tr').classList.contains('ns-drag-src')) {
+                targetTr = hit.closest('.nostock-table tbody tr');
+              }
             } catch (err) { /* jsdom 等无实现，走退化方案 */ }
             if (!targetTr) {
-              // 退化方案：按 clientY 找最近的行
+              // 退化方案：按 clientY 找最近的行（跳过被拖行自身）
               let best = null, bestDist = Infinity;
               [...tbody.children].forEach((x) => {
                 if (!x._nsRow || x === dragTr) return;
@@ -3150,16 +3170,17 @@
             if (!targetTr || targetTr === dragTr) return;
             const rect = targetTr.getBoundingClientRect();
             const before = ((ev.clientY || 0) - rect.top) < rect.height / 2; // 上半=插到前面，下半=插到后面
-            tbody.insertBefore(dragTr, before ? targetTr : targetTr.nextSibling);
+            tbody.insertBefore(dragTr, before ? targetTr : targetTr.nextSibling); // 实时变化
           };
           const up = () => {
             grip.removeEventListener('pointermove', move);
             grip.removeEventListener('pointerup', up);
             grip.removeEventListener('pointercancel', up);
-            tr.classList.remove('dragging');
+            ghostWrap.remove();
+            tr.classList.remove('ns-drag-src');
             document.body.classList.remove('ns-dragging');
             if (dragTr) {
-              const trs = [...tbody.children].filter((x) => x._nsRow); // 按当前 DOM 顺序重排 rows
+              const trs = [...tbody.children].filter((x) => x._nsRow); // 按当前 DOM 顺序重排 rows（保存统一在「保存全部」）
               const reordered = trs.map((x) => x._nsRow);
               rows.length = 0;
               rows.push(...reordered);
