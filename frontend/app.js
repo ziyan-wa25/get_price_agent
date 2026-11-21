@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-80（无库存查看模式右上角搜索：实时过滤、只重绘表格不打断输入）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-81（密码策略修正：原本合规的旧密码免改放行，登录时自动判定；不合规才两步式改密）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -159,32 +159,56 @@
   }
 
   function forceChangePassword(prefillOld) {
-    openModal('安全要求：请先设置新密码');
+    openModal('安全要求：密码检查');
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '为保障账号安全，所有账号都必须设置符合规则的新密码后才能使用系统：至少 10 位，且同时包含大写字母、小写字母、数字和符号（如 !@#$%）。'));
+    body.appendChild(el('div', 'modal-hint', '为保障账号安全，密码需至少 10 位且同时包含大写字母、小写字母、数字和符号（如 !@#$%）。如你的当前密码已符合要求，输入后点「下一步」即可直接进入，无需修改；不符合则需设置一个符合规则的新密码。'));
     const iOld = el('input'); iOld.type = 'password'; iOld.placeholder = '当前密码'; iOld.value = prefillOld || '';
-    const iNew = el('input'); iNew.type = 'password'; iNew.placeholder = '新密码（≥10位，含大小写字母+数字+符号）';
-    const iNew2 = el('input'); iNew2.type = 'password'; iNew2.placeholder = '确认新密码';
-    body.appendChild(iOld); body.appendChild(iNew); body.appendChild(iNew2);
-    const foot = el('div', 'form-row');
-    const bOk = el('button', 'primary', '修改密码并进入系统');
-    bOk.onclick = async () => {
-      const np = iNew.value;
-      const perr = pwdPolicyClientError(np);
-      if (perr) { alert(perr); return; }
-      if (np !== iNew2.value) { alert('两次输入的新密码不一致'); return; }
-      if (np === iOld.value) { alert('新密码不能与当前密码相同'); return; }
-      bOk.disabled = true;
-      try {
-        await api('POST', '/api/change-password', { oldPassword: iOld.value, newPassword: np });
-        me.mustChange = false;
-        closeModal();
-        enterApp();
-      } catch (e) { alert(e.message); }
-      finally { bOk.disabled = false; }
+    body.appendChild(iOld);
+    const rowNext = el('div', 'form-row');
+    const bNext = el('button', 'primary', '下一步');
+    rowNext.appendChild(bNext);
+    body.appendChild(rowNext);
+    // 第二步：当前密码不合规（或是初始/临时密码）→ 设置新密码
+    const step2 = () => {
+      const iNew = el('input'); iNew.type = 'password'; iNew.placeholder = '新密码（≥10位，含大小写字母+数字+符号）';
+      const iNew2 = el('input'); iNew2.type = 'password'; iNew2.placeholder = '确认新密码';
+      body.appendChild(iNew); body.appendChild(iNew2);
+      const foot = el('div', 'form-row');
+      const bOk = el('button', 'primary', '修改密码并进入系统');
+      bOk.onclick = async () => {
+        const np = iNew.value;
+        const perr = pwdPolicyClientError(np);
+        if (perr) { alert(perr); return; }
+        if (np !== iNew2.value) { alert('两次输入的新密码不一致'); return; }
+        if (np === iOld.value) { alert('新密码不能与当前密码相同'); return; }
+        bOk.disabled = true;
+        try {
+          await api('POST', '/api/change-password', { oldPassword: iOld.value, newPassword: np });
+          me.mustChange = false;
+          closeModal();
+          enterApp();
+        } catch (e) { alert(e.message); }
+        finally { bOk.disabled = false; }
+      };
+      foot.appendChild(bOk);
+      body.appendChild(foot);
+      iNew.focus();
     };
-    foot.appendChild(bOk);
-    body.appendChild(foot);
+    bNext.onclick = async () => {
+      bNext.disabled = true;
+      try {
+        const r = await api('POST', '/api/password-policy-check', { oldPassword: iOld.value });
+        if (r && r.compliant) { // 当前密码已符合要求：免改，直接进入
+          me.mustChange = false;
+          closeModal();
+          enterApp();
+          return;
+        }
+        rowNext.remove();
+        step2();
+      } catch (e) { alert(e.message); }
+      finally { bNext.disabled = false; }
+    };
   }
 
   function doLogout(expired) {
