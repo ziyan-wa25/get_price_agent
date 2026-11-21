@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-76（设置弹窗标题秒开：权限区标题先渲染、名单异步填充互不阻塞）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-77（无库存产品统计修改权并入功能权限管理 nostock.edit，设置里不再单独设名单）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2677,54 +2677,13 @@
       });
     };
     renderOrd();
-    // admin：两个权限折叠区——标题先同步渲染（点开立即出现），名单内容各自异步填充，互不阻塞
+    // admin：功能权限管理（无库存产品统计的修改权也已并入其中）——标题同步渲染，名单异步填充，默认收起
     if (me && me.role === 'admin') {
-      const ns = mkCollapse('「无库存产品统计」修改权限', false);
-      body.appendChild(ns.head);
-      body.appendChild(ns.sec);
-      const secNs = ns.sec;
-      secNs.appendChild(el('div', 'modal-hint', '加载中…'));
-      // 功能权限管理（岗位退役过渡）：按页面分组折叠；逐权限勾选成员；admin 兜底全权不进名单——默认收起
       const permTop = mkCollapse('功能权限管理', false);
       body.appendChild(permTop.head);
       body.appendChild(permTop.sec);
       const secPerm = permTop.sec;
       secPerm.appendChild(el('div', 'modal-hint', '加载中…'));
-      // 无库存修改权限名单（异步填充）
-      (async () => {
-        try {
-          const [rNs, rUs] = await Promise.all([api('GET', '/api/nostock'), api('GET', '/api/users')]);
-          const editors = new Set(rNs.editors || []);
-          const users = (rUs.users || []).filter((u) => u.username !== me.username); // admin 自身始终有权限，不需勾选
-          secNs.innerHTML = '';
-          secNs.appendChild(el('div', 'modal-hint', '勾选哪些成员可以修改「无库存产品统计」（批量改后保存）；未勾选的成员只能查看。'));
-          users.forEach((u) => {
-            const l = el('label', 'fav-vis-item');
-            const c = el('input');
-            c.type = 'checkbox';
-            c.checked = editors.has(u.username);
-            c.onchange = async () => {
-              if (c.checked) editors.add(u.username); else editors.delete(u.username);
-              try {
-                const rr = await api('POST', '/api/nostock-item', { action: 'editors', list: [...editors] });
-                editors.clear();
-                (rr.list || []).forEach((n) => editors.add(n));
-              } catch (e) {
-                c.checked = !c.checked;
-                alert(e.message);
-              }
-            };
-            l.appendChild(c);
-            l.appendChild(el('span', '', u.username));
-            l.appendChild(el('span', 'fav-vis-role', roleText(u.role)));
-            secNs.appendChild(l);
-          });
-          if (!users.length) secNs.appendChild(el('div', 'modal-hint', '暂无其他成员'));
-        } catch (e) {
-          secNs.innerHTML = '';
-          secNs.appendChild(el('div', 'modal-hint', '权限列表加载失败：' + e.message));
-        }
-      })();
       // 功能权限表（异步填充，不阻塞界面）
       (async () => {
         try {
