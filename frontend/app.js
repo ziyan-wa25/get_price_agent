@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-77（无库存产品统计修改权并入功能权限管理 nostock.edit，设置里不再单独设名单）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-78（无库存批量修改支持拖 ⠿ 滑块排序行）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3034,6 +3034,7 @@
     const editing = d.canEdit && noStockBatch;
     const tbl = el('table', 'stock-table nostock-table');
     const trh = el('tr');
+    if (editing) trh.appendChild(el('th', 'col-drag', '拖'));
     ['名称', '市场价1', '市场价2', '市场价3', '定价'].forEach((h) => trh.appendChild(el('th', '', h)));
     if (editing) trh.appendChild(el('th', '', '删'));
     const thead = el('thead');
@@ -3059,26 +3060,55 @@
       bar.appendChild(bSave);
       bar.appendChild(bCancel);
       body.appendChild(bar);
-      body.appendChild(el('div', 'modal-hint', '批量修改：直接在表格里改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'));
+      body.appendChild(el('div', 'modal-hint', '批量修改：拖 ⠿ 滑块可调整行顺序；直接改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'));
       const persist = () => { noStockData = { ...d, items: rows }; }; // 增/删行重渲染前先写回，否则改动丢失
-      rows.forEach((r, i) => {
+      let dragTr = null; // 拖动排序（滑块 ⠿）：只挪 DOM 与 rows 顺序，不重渲染，不打断输入
+      rows.forEach((r) => {
         const tr = el('tr');
+        tr._nsRow = r;
+        const tdDrag = el('td', 'col-drag');
+        const grip = el('span', 'drag-ns', '⠿');
+        grip.title = '拖动调整顺序（保存全部后生效）';
+        grip.draggable = true;
+        grip.addEventListener('dragstart', (e) => {
+          dragTr = tr;
+          tr.classList.add('dragging');
+          try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'ns'); } catch (err) { /* 忽略 */ }
+        });
+        grip.addEventListener('dragend', () => {
+          tr.classList.remove('dragging');
+          if (!dragTr) return;
+          const trs = [...tbody.children].filter((x) => x._nsRow); // 按当前 DOM 顺序重排 rows
+          const reordered = trs.map((x) => x._nsRow);
+          rows.length = 0;
+          rows.push(...reordered);
+          dragTr = null;
+        });
+        tdDrag.appendChild(grip);
+        tr.appendChild(tdDrag);
         ['name', 'mp1', 'mp2', 'mp3', 'price'].forEach((k) => {
           const td = el('td');
-          const inp = stockCellInput(r[k] || '', () => { rows[i][k] = inp.value; });
+          const inp = stockCellInput(r[k] || '', () => { r[k] = inp.value; }); // 写行对象本身：拖动换位后依旧正确
           td.appendChild(inp);
           tr.appendChild(td);
         });
         const tdDel = el('td');
         const bDel = el('button', 'fav-del', '🗑');
-        bDel.onclick = () => { rows.splice(i, 1); persist(); renderNoStockBody(); };
+        bDel.onclick = () => { const i2 = rows.indexOf(r); if (i2 >= 0) rows.splice(i2, 1); persist(); renderNoStockBody(); };
         tdDel.appendChild(bDel);
         tr.appendChild(tdDel);
+        tr.addEventListener('dragover', (e) => {
+          if (!dragTr || dragTr === tr) return;
+          e.preventDefault();
+          const rect = tr.getBoundingClientRect();
+          const before = (e.clientY - rect.top) < rect.height / 2; // 上半=插到前面，下半=插到后面
+          tbody.insertBefore(dragTr, before ? tr : tr.nextSibling);
+        });
         tbody.appendChild(tr);
       });
       const trAdd = el('tr');
       const tdAdd = el('td');
-      tdAdd.colSpan = 6;
+      tdAdd.colSpan = 7;
       const bAdd = el('button', 'primary', '＋ 新增一行');
       bAdd.onclick = () => { rows.push({ name: '', mp1: '', mp2: '', mp3: '', price: '' }); persist(); renderNoStockBody(); };
       tdAdd.appendChild(bAdd);
