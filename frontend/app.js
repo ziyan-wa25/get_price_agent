@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-73（设置折叠区默认收起、代办事项入口开关）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-74（功能权限管理：按岗位预勾选迁移+设置界面勾选+库存权限切表）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -1199,8 +1199,8 @@
       bCancel.onclick = exitStockBatch;
       bar.appendChild(bSave);
       bar.appendChild(bCancel);
-    } else if (!stockData.canEdit && me && me.role === 'exporter' && stockBatchMode === 'wh') {
-      // 库存导出员专用：只能修改「备注（库房）」列
+    } else if (!stockData.canEdit && stockData.canWhEdit && stockBatchMode === 'wh') {
+      // 「备注（库房）」批量模式（功能权限表驱动）：只能修改库房列
       bar.classList.add('sticky');
       const n = stockChangedWh().length;
       const bSave = el('button', 'primary', '💾 保存库房备注（' + n + '）');
@@ -1220,7 +1220,7 @@
         bEdit.onclick = enterStockBatchEdit;
         bar.appendChild(bEdit);
       }
-      if (!stockData.canEdit && me && me.role === 'exporter') {
+      if (!stockData.canEdit && stockData.canWhEdit) {
         const bWh = el('button', 'primary', '✏️ 修改库房备注');
         bWh.classList.add('desk-only'); // 手机端隐藏
         bWh.onclick = enterStockWhEdit;
@@ -2710,6 +2710,45 @@
         });
       } catch (e) {
         secNs.appendChild(el('div', 'modal-hint', '权限列表加载失败：' + e.message));
+      }
+      // 功能权限管理（岗位退役过渡）：按页面分组折叠；逐权限勾选成员；admin 兜底全权不进名单——默认收起
+      const permTop = mkCollapse('功能权限管理', false);
+      body.appendChild(permTop.head);
+      body.appendChild(permTop.sec);
+      const secPerm = permTop.sec;
+      secPerm.appendChild(el('div', 'modal-hint', '按功能勾选可用成员，改动立即生效；管理员始终拥有全部权限。'));
+      try {
+        const pr = await api('GET', '/api/perms');
+        const defs = pr.defs || [];
+        const all = pr.all || {};
+        const permUsers = pr.users || [];
+        const groups = [];
+        defs.forEach((p) => { if (!groups.includes(p.group)) groups.push(p.group); });
+        groups.forEach((g) => {
+          const gc = mkCollapse(g, false);
+          secPerm.appendChild(gc.head);
+          secPerm.appendChild(gc.sec);
+          defs.filter((p) => p.group === g).forEach((p) => {
+            gc.sec.appendChild(el('div', 'settings-label', p.name + (p.desc ? '：' + p.desc : '')));
+            permUsers.forEach((un) => {
+              const l = el('label', 'fav-vis-item');
+              const c = el('input');
+              c.type = 'checkbox';
+              c.checked = (all[un] || []).includes(p.key);
+              c.onchange = async () => {
+                try {
+                  const rr = await api('POST', '/api/perms-item', { action: 'set', username: un, key: p.key, value: c.checked });
+                  all[un] = rr.keys || [];
+                } catch (e) { c.checked = !c.checked; alert(e.message); }
+              };
+              l.appendChild(c);
+              l.appendChild(el('span', '', un));
+              gc.sec.appendChild(l);
+            });
+          });
+        });
+      } catch (e) {
+        secPerm.appendChild(el('div', 'modal-hint', '权限表加载失败：' + e.message));
       }
     }
   }
