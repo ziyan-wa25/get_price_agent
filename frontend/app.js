@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-74（功能权限管理：按岗位预勾选迁移+设置界面勾选+库存权限切表）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-75（功能权限表全量切换：价格/机型/总表/AI/进项/应收/业绩/款项；账号管理岗位下拉退役）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -24,6 +24,7 @@
   const cards = {};           // cardId -> { quote, manual, overrides, editing, ... }
   let sending = false;
   let priceData = null;       // 配件价格表缓存（/api/catalog）
+  let pricePerms = null;      // 价格页权限标志（canEditPrice/canEditMachine/canEditTotal/canChat，功能权限表驱动）
   let priceMachineId = null;  // 价格表当前查看的机型
   let priceKeyword = '';      // 价格表搜索关键词
 
@@ -1130,7 +1131,7 @@
 
   // ---------- 历史 ----------
   // ---------- 库存表（独立于报价/LLM） ----------
-  const ROLE_LABELS = { admin: '管理员', user: '普通用户', uploader: '库存上传员', exporter: '库存导出员', referrer: '参考者' };
+  // ROLE_LABELS 已退役：岗位仅作历史模板标签显示（roleText），不再参与任何权限判断
   let stockData = null;      // GET /api/stock 结果：{items, lastImportAt, lastImportBy, lastPriceChangeAt, lastPriceChangeBy, canSeePrice, canImport, canExport, canEdit}
   let stockBatchMode = null; // null | 'edit'（admin：整行改+标记删除） | 'wh'（库存导出员：仅改备注库房）
   let stockQtySort = null;   // null | 'desc' | 'asc'：点击「库存量」表头切换排序（仅普通浏览模式）
@@ -3806,6 +3807,7 @@
       const r = await api('GET', '/api/catalog');
       priceData = r.machines || [];
       priceTotal = r.totalSheet || [];
+      pricePerms = { canEditPrice: !!r.canEditPrice, canEditMachine: !!r.canEditMachine, canEditTotal: !!r.canEditTotal, canChat: !!r.canChat }; // 功能权限表驱动
       if (!priceTotalMode && !priceMachineId || !priceData.some((m) => m.id === priceMachineId)) {
         const priced = priceData.find((m) => m.priced);
         priceMachineId = priced ? priced.id : (priceData[0] && priceData[0].id);
@@ -3823,6 +3825,7 @@
     api('GET', '/api/catalog').then((r) => {
       priceData = r.machines || [];
       priceTotal = r.totalSheet || [];
+      pricePerms = { canEditPrice: !!r.canEditPrice, canEditMachine: !!r.canEditMachine, canEditTotal: !!r.canEditTotal, canChat: !!r.canChat };
       if (!priceTotalMode && !priceMachineId || !priceData.some((m) => m.id === priceMachineId)) {
         const priced = priceData.find((m) => m.priced);
         priceMachineId = priced ? priced.id : (priceData[0] && priceData[0].id);
@@ -3832,7 +3835,7 @@
   }
 
   function renderPricePage() {
-    const isAdmin = me && me.role === 'admin';
+    const canMachine = !!(pricePerms && pricePerms.canEditMachine); // 机型管理 = 功能权限表
     const tabs = $('#price-tabs');
     tabs.innerHTML = '';
     // 总表页签：与所有机型并列
@@ -3843,11 +3846,11 @@
     (priceData || []).forEach((m) => {
       const b = el('button', 'price-tab' + (!priceTotalMode && m.id === priceMachineId ? ' active' : '') + (m.priced ? '' : ' disabled'),
         m.family + (m.priced ? '' : '（暂无价格）'));
-      if (m.priced || me.role === 'admin') {
+      if (m.priced || canMachine) {
         b.onclick = () => { priceMachineId = m.id; priceTotalMode = false; priceEdit = null; priceBatch = null; renderPricePage(); };
       }
-      // 管理员可拖动页签调整机型顺序
-      if (isAdmin) {
+      // 有机型管理权限的人可拖动页签调整机型顺序
+      if (canMachine) {
         b.draggable = true;
         b.title = m.family + '（拖动可调整机型顺序）';
         b.ondragstart = (e) => {
@@ -3862,7 +3865,7 @@
       tabs.appendChild(b);
     });
 
-    if (isAdmin && !priceTotalMode && priceMachineId) {
+    if (canMachine && !priceTotalMode && priceMachineId) {
       const cur = (priceData || []).find((x) => x.id === priceMachineId);
       const ops = el('div', 'price-toolbar machine-ops');
 
@@ -4391,12 +4394,12 @@
   function renderTotalTable() {
     const box = $('#price-content');
     box.innerHTML = '';
-    const isAdmin = me && me.role === 'admin';
+    const canTotal = !!(pricePerms && pricePerms.canEditTotal); // 总表管理 = 功能权限表
     box.appendChild(el('div', 'price-banner admin',
       '总表 = 所有配件的唯一主数据：修改总表（价格/描述/名称/分类）会立即写穿到所有机型里的同名配件；删除总表配件时，所有机型里的同名配件一并删除。' +
       '机型页的「批量导入」可直接从总表选配件。'));
 
-    if (isAdmin) {
+    if (canTotal) {
       const toolbar = el('div', 'price-toolbar');
       if (!priceBatch) {
         const addBtn = el('button', 'btn-edit ok', '+ 新增配件');
@@ -4426,7 +4429,7 @@
     const rows = priceTotal.filter((i) =>
       !kw || ((i.name + ' ' + (i.short || '') + ' ' + (i.note || '')).toLowerCase().includes(kw)));
 
-    const cols = isAdmin ? ['配件', '单价', '操作'] : ['配件', '单价'];
+    const cols = canTotal ? ['配件', '单价', '操作'] : ['配件', '单价'];
     const tbl = el('table');
     const thead = el('thead');
     const trh = el('tr');
@@ -4494,7 +4497,7 @@
         }
         tr.appendChild(tdPrice);
 
-        if (isAdmin) {
+        if (canTotal) {
           const tdOp = el('td', 'op-col');
           if (priceBatch) {
             const delBtn = el('button', 'btn-edit danger', toBeDeleted ? '撤销删除' : '删除');
@@ -4534,9 +4537,9 @@
     box.innerHTML = '';
     const m = (priceData || []).find((x) => x.id === priceMachineId);
     if (!m) return;
-    const isAdmin = me && me.role === 'admin';
+    const canPrice = !!(pricePerms && pricePerms.canEditPrice); // 价格表内容管理 = 功能权限表
 
-    if (isAdmin) {
+    if (canPrice) {
       box.appendChild(el('div', 'price-banner admin',
         '配件的名称/价格/描述统一在「📌 总表」编辑（修改会写穿到这里）；本页用「批量导入」加配件、「批量删除」清理导入失误——批量删除只删本机型，总表与其他机型不受影响。'));
       const toolbar = el('div', 'price-toolbar');
@@ -4717,7 +4720,7 @@
     const btnAdd = el('button', '', '添加账号');
     form.appendChild(inUser); form.appendChild(inPass); form.appendChild(btnAdd);
     body.appendChild(form);
-    const hint = el('div', 'modal-hint', '岗位说明：管理员=全部权限（含库存编辑/成本价）；普通用户=报价与查看库存（可见售价）；库存上传员=可导入库存与应收明细；库存导出员=可导出库存；参考者=普通用户权限+库存页价格全可见+库存导出六列完整（同 admin）。删除规则：admin 可以删除任何人（历史报价一并删除），唯独不能删除自己。');
+    const hint = el('div', 'modal-hint', '权限管理：请在「设置 → 功能权限管理」里按功能勾选每个账号的可用权限（管理员始终全部可用）。岗位名只是历史模板标签，不再决定权限。删除规则：admin 可以删除任何人（历史报价一并删除），唯独不能删除自己。');
     body.appendChild(hint);
 
     const listBox = el('div');
@@ -4735,39 +4738,11 @@
           const isExtraAdmin = u.role === 'admin' && !isSelf; // 历史遗留的多余管理员：可改岗、可删除
           if (isExtraAdmin) {
             const warn = el('span', 'u-warn', '⚠️ 多余管理员');
-            warn.title = '系统仅保留一个管理员。可将该账号改为正确岗位，或直接删除。';
+            warn.title = '系统仅保留一个管理员：该账号始终拥有全部权限。如不再需要可直接删除。';
             row.appendChild(warn);
           }
-          const roleSel = el('select', 'u-role');
-          Object.keys(ROLE_LABELS).forEach((rk) => {
-            if (rk === 'admin') return; // 系统仅一个管理员，不提供管理员选项
-            const opt = el('option', '', ROLE_LABELS[rk]);
-            opt.value = rk;
-            roleSel.appendChild(opt);
-          });
-          if (isExtraAdmin) {
-            const ph = el('option', '', '是管理员，请改选 ↓');
-            ph.value = '';
-            ph.disabled = true;
-            ph.selected = true;
-            roleSel.insertBefore(ph, roleSel.firstChild);
-          } else {
-            roleSel.value = u.role;
-          }
-          if (isSelf) {
-            roleSel.disabled = true;
-            roleSel.title = '不能修改自己的岗位';
-          } else {
-            roleSel.onchange = async () => {
-              if (!roleSel.value) { roleSel.value = ''; return; }
-              if (!confirm('把「' + u.username + '」的岗位改为「' + ROLE_LABELS[roleSel.value] + '」？')) { roleSel.value = u.role; refresh(); return; }
-              try {
-                await api('POST', '/api/users-role', { username: u.username, role: roleSel.value });
-                refresh();
-              } catch (e) { alert('修改失败：' + e.message); roleSel.value = u.role; }
-            };
-          }
-          row.appendChild(roleSel);
+          const tag = el('span', 'fav-vis-role', roleText(u.role)); // 历史模板标签（权限已改由功能权限表管理，岗位不再参与判断）
+          row.appendChild(tag);
           const rstPass = el('button', 'u-del', '🔑 重设密码');
           rstPass.title = '为该用户设置新密码（用于忘记密码时）：对方当前密码立即失效，下次登录用新密码，登录后会被要求再次修改';
           rstPass.onclick = () => openResetPassModal(u.username);
