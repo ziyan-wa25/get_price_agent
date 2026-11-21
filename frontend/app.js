@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-79（拖动排序改 pointer 实现+无库存预加载秒开+密码安全策略强制改密）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-80（无库存查看模式右上角搜索：实时过滤、只重绘表格不打断输入）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3029,6 +3029,7 @@
     openModal('无库存产品统计', true);
     const body = $('#modal-body');
     if (noStockData) { // 有预取缓存：先秒显，再后台刷新（SWR）
+      noStockQuery = ''; // 每次打开重置搜索
       renderNoStockBody();
       api('GET', '/api/nostock').then((d) => {
         if (noStockBatch) return; // 正在批量编辑时不覆盖
@@ -3039,6 +3040,7 @@
       return;
     }
     body.appendChild(el('div', 'modal-hint', '加载中…'));
+    noStockQuery = ''; // 每次打开重置搜索
     try {
       noStockData = await api('GET', '/api/nostock');
     } catch (e) {
@@ -3050,6 +3052,7 @@
   }
 
   let noStockBatch = false; // 无库存批量修改模式：平时打开为查看，点「批量修改」才进入编辑（同库存表）
+  let noStockQuery = ''; // 无库存查看模式搜索关键词（仅查看态过滤展示；批量编辑态不搜索，避免漏存被过滤的行）
 
   function renderNoStockBody() {
     const body = $('#modal-body');
@@ -3170,22 +3173,49 @@
       body.appendChild(tbl);
       return;
     }
-    // 查看模式（默认）：有权限的人显示「批量修改」入口，点击后才进入编辑
+    // 查看模式（默认）：有权限的人显示「批量修改」入口；右上角搜索实时过滤（只重绘 tbody，输入焦点不丢）
     if (d.canEdit) {
       const bar = el('div', 'stock-toolbar');
       const bEdit = el('button', 'primary', '✏️ 批量修改');
-      bEdit.onclick = () => { noStockBatch = true; renderNoStockBody(); };
+      bEdit.onclick = () => { noStockQuery = ''; noStockBatch = true; renderNoStockBody(); };
       bar.appendChild(bEdit);
       body.appendChild(bar);
       body.appendChild(el('div', 'modal-hint', '查看模式：点「批量修改」进入编辑（批量新增/修改，一次保存全部生效）。'));
     } else {
       body.appendChild(el('div', 'modal-hint', '只读查看（修改权限由管理员在设置中指定）。'));
     }
-    rows.forEach((r) => {
-      const tr = el('tr');
-      [r.name, r.mp1, r.mp2, r.mp3, r.price].forEach((v) => { const td = el('td'); td.textContent = v || ''; tr.appendChild(td); });
-      tbody.appendChild(tr);
-    });
+    const searchRow = el('div', 'ns-search-row');
+    const sInp = el('input', 'ns-search');
+    sInp.type = 'text';
+    sInp.placeholder = '🔍 搜索名称/价格…';
+    sInp.value = noStockQuery || '';
+    searchRow.appendChild(sInp);
+    body.appendChild(searchRow);
+    const nsCount = el('div', 'modal-hint', '');
+    body.appendChild(nsCount);
+    const renderNsRows = () => {
+      const f = (noStockQuery || '').trim().toLowerCase();
+      const list = f ? rows.filter((r) => ['name', 'mp1', 'mp2', 'mp3', 'price'].some((k) => String(r[k] || '').toLowerCase().includes(f))) : rows;
+      tbody.innerHTML = '';
+      list.forEach((r) => {
+        const tr = el('tr');
+        [r.name, r.mp1, r.mp2, r.mp3, r.price].forEach((v) => { const td = el('td'); td.textContent = v || ''; tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+      if (!list.length) {
+        const tr0 = el('tr');
+        const td0 = el('td');
+        td0.colSpan = 5;
+        td0.style.textAlign = 'center';
+        td0.style.color = '#98a3b3';
+        td0.textContent = f ? '无匹配产品' : '（暂无数据，点「批量修改」新增）';
+        tr0.appendChild(td0);
+        tbody.appendChild(tr0);
+      }
+      nsCount.textContent = f ? ('匹配 ' + list.length + ' / ' + rows.length + ' 条') : ('共 ' + rows.length + ' 条');
+    };
+    sInp.oninput = () => { noStockQuery = sInp.value; renderNsRows(); };
+    renderNsRows();
     tbl.appendChild(tbody);
     body.appendChild(tbl);
     if (!rows.length) body.appendChild(el('div', 'modal-hint', '暂无数据'));
