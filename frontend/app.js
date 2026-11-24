@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-84（待办事项新版：卡片输入栏+今日待办/完成归档标签页+圆形对勾+⋮⋮拖动排序云端保存+删除）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-85（待办「＋添加」按钮专门美化：渐变主色+悬浮质感+输入栏聚焦光晕）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3260,7 +3260,7 @@
     const inp = el('input');
     inp.maxLength = 500;
     inp.placeholder = '添加一件待办…';
-    const bAdd = el('button', 'primary', '添加');
+    const bAdd = el('button', 'todo-add-btn', '＋ 添加');
     const add = async () => {
       const text = inp.value.trim();
       if (!text) { inp.focus(); return; }
