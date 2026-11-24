@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-83（无库存拖动改回与设置/收藏夹同款原生拖拽：按住⠿整行可拖+dragover实时让位，修复白块与影子残留）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-84（待办事项新版：卡片输入栏+今日待办/完成归档标签页+圆形对勾+⋮⋮拖动排序云端保存+删除）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3223,6 +3223,7 @@
 
   // ---------- 代办事项（每人自己的数据；完成后进历史，按完成时间倒序） ----------
   let todoData = null;
+  let todoView = 'active'; // 待办视图：active=今日待办 / done=完成归档（刷新后保持所在标签）
 
   async function loadTodos() {
     const box = $('#todo-content');
@@ -3242,83 +3243,135 @@
     api('GET', '/api/todos').then((d) => { todoData = d; renderTodoPage(); }).catch(() => {});
   }
 
+  // 新版待办（参考独立设计稿融合）：卡片式输入栏 + 今日待办/完成归档两个标签 + 圆形对勾 + ⋮⋮ 拖动排序（云端保存）+ 删除
   function renderTodoPage() {
     const box = $('#todo-content');
     const info = $('#todo-info');
     info.innerHTML = '';
     info.appendChild(el('span', 'stock-import-time', '代办事项（个人数据，每人各自维护）'));
     const d = todoData || { items: [] };
+    const all = d.items || [];
+    const active = all.filter((t) => !t.done); // 数组顺序 = 云端保存的顺序（拖动后即用户顺序）
+    const done = all.filter((t) => t.done).sort((a, b) => b.doneAt - a.doneAt);
     box.innerHTML = '';
-    const active = (d.items || []).filter((t) => !t.done).sort((a, b) => a.createdAt - b.createdAt);
-    const done = (d.items || []).filter((t) => t.done).sort((a, b) => b.doneAt - a.doneAt);
-    const bar = el('div', 'stock-toolbar');
-    const inp = el('input', 'price-search');
-    inp.placeholder = '输入要办的事，点击「新增代办」保存';
-    inp.style.flex = '1';
-    const bAdd = el('button', 'primary', '＋ 新增代办');
+
+    // 输入栏：输入 + 添加（回车同效）
+    const composer = el('div', 'todo-composer');
+    const inp = el('input');
+    inp.maxLength = 500;
+    inp.placeholder = '添加一件待办…';
+    const bAdd = el('button', 'primary', '添加');
     const add = async () => {
       const text = inp.value.trim();
-      if (!text) { alert('请输入代办内容'); return; }
+      if (!text) { inp.focus(); return; }
       try {
         await api('POST', '/api/todo-item', { action: 'add', text });
         inp.value = '';
+        todoView = 'active';
         refreshTodos();
       } catch (e) { alert(e.message); }
     };
     bAdd.onclick = add;
     inp.onkeydown = (e) => { if (e.key === 'Enter') add(); };
-    bar.appendChild(inp);
-    bar.appendChild(bAdd);
-    box.appendChild(bar);
-    box.appendChild(el('div', 'modal-hint', '我的代办（' + active.length + '）——完成后不再显示'));
-    if (active.length) {
-      const tbl = el('table', 'stock-table todo-table');
-      const trh = el('tr');
-      ['代办内容', '创建时间', '操作'].forEach((h) => trh.appendChild(el('th', '', h)));
-      const thead = el('thead');
-      thead.appendChild(trh);
-      tbl.appendChild(thead);
-      const tbody = el('tbody');
-      active.forEach((t) => {
-        const tr = el('tr');
-        const mk = (text) => { const td = el('td'); td.textContent = text; tr.appendChild(td); };
-        mk(t.text);
-        mk(new Date(t.createdAt).toLocaleString('zh-CN'));
-        const tdOp = el('td');
-        const bDone = el('button', 'primary', '✔ 完成');
-        bDone.onclick = async () => {
-          try { await api('POST', '/api/todo-item', { action: 'done', id: t.id, value: true }); }
-          catch (e) { alert(e.message); }
+    composer.appendChild(inp);
+    composer.appendChild(bAdd);
+    box.appendChild(composer);
+
+    // 列表卡片：工具栏（计数 + 标签页）+ 列表 + 页脚
+    const card = el('div', 'todo-card');
+    const toolbar = el('div', 'todo-toolbar');
+    const count = el('span', 'todo-count', '');
+    const tabA = el('button', 'todo-filter', '今日待办');
+    const tabD = el('button', 'todo-filter', '完成归档');
+    toolbar.appendChild(count);
+    toolbar.appendChild(tabA);
+    toolbar.appendChild(tabD);
+    card.appendChild(toolbar);
+    const listEl = el('div', 'todo-list');
+    card.appendChild(listEl);
+    const foot = el('div', 'todo-foot');
+    const fSum = el('span', '', '');
+    const fHint = el('span', '', '');
+    foot.appendChild(fSum);
+    foot.appendChild(fHint);
+    card.appendChild(foot);
+    box.appendChild(card);
+
+    const renderList = () => {
+      tabA.classList.toggle('active', todoView === 'active');
+      tabD.classList.toggle('active', todoView === 'done');
+      count.textContent = todoView === 'active' ? ('待完成 ' + active.length + ' 项') : ('已完成 ' + done.length + ' 项');
+      fSum.textContent = todoView === 'active' ? (active.length ? '还有 ' + active.length + ' 项未完成' : '当前没有未完成任务 ✓') : ('共完成 ' + done.length + ' 项');
+      fHint.textContent = todoView === 'active' ? '拖动 ⋮⋮ 排序 · 完成自动归档' : '按完成时间倒序 · 可删除记录';
+      listEl.innerHTML = '';
+      const rows = todoView === 'active' ? active : done;
+      if (!rows.length) {
+        listEl.appendChild(el('div', 'todo-empty', todoView === 'active' ? '还没有待办，添加一件开始吧。' : '还没有已完成的代办。'));
+        return;
+      }
+      let dragRow = null;
+      rows.forEach((t) => {
+        const isDone = todoView === 'done';
+        const row = el('div', 'todo-row' + (isDone ? ' done-row' : ''));
+        row.dataset.id = t.id;
+        if (!isDone) {
+          // 拖动排序（同设置/收藏夹模式：按住 ⋮⋮ 才整行可拖，dragover 实时让位，dragend 统一提交云端）
+          const handle = el('button', 'todo-handle', '⋮⋮');
+          handle.title = '按住拖动调整顺序';
+          handle.addEventListener('mousedown', () => { row.draggable = true; });
+          row.addEventListener('dragstart', (e) => {
+            dragRow = row;
+            row.classList.add('dragging');
+            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id); } catch (err) { /* 忽略 */ } }
+          });
+          row.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!dragRow || dragRow === row) return;
+            const rect = row.getBoundingClientRect();
+            const before = (e.clientY - rect.top) < rect.height / 2;
+            listEl.insertBefore(dragRow, before ? row : row.nextSibling);
+          });
+          row.addEventListener('drop', (e) => { e.preventDefault(); });
+          row.addEventListener('dragend', () => {
+            row.classList.remove('dragging');
+            row.draggable = false;
+            if (dragRow) {
+              const ids = [...listEl.querySelectorAll('.todo-row')].map((x) => x.dataset.id);
+              dragRow = null;
+              api('POST', '/api/todo-item', { action: 'reorder', ids }).then(() => refreshTodos()).catch(() => {});
+            }
+          });
+          row.appendChild(handle);
+        }
+        const check = el('button', 'todo-check', isDone ? '✓' : '');
+        check.title = isDone ? '标记为未完成' : '完成';
+        check.onclick = async () => {
+          try {
+            await api('POST', '/api/todo-item', { action: 'done', id: t.id, value: !isDone });
+            refreshTodos();
+          } catch (e) { alert(e.message); }
         };
-        tdOp.appendChild(bDone);
-        tr.appendChild(tdOp);
-        tbody.appendChild(tr);
+        row.appendChild(check);
+        const bodyDiv = el('div', 'todo-body');
+        bodyDiv.appendChild(el('div', 'todo-text', t.text));
+        if (isDone) bodyDiv.appendChild(el('div', 'todo-meta', '完成于 ' + new Date(t.doneAt).toLocaleString('zh-CN')));
+        row.appendChild(bodyDiv);
+        const del = el('button', 'todo-del', '×');
+        del.title = '删除';
+        del.onclick = async () => {
+          if (isDone && !confirm('确定删除这条完成记录吗？')) return;
+          try {
+            await api('POST', '/api/todo-item', { action: 'delete', id: t.id });
+            refreshTodos();
+          } catch (e) { alert(e.message); }
+        };
+        row.appendChild(del);
+        listEl.appendChild(row);
       });
-      tbl.appendChild(tbody);
-      box.appendChild(tbl);
-    } else {
-      box.appendChild(el('div', 'modal-hint', '没有待办，在上方输入后点「新增代办」。'));
-    }
-    box.appendChild(el('div', 'modal-hint', '历史代办（已完成 ' + done.length + '，按完成时间倒序）'));
-    if (done.length) {
-      const tbl2 = el('table', 'stock-table todo-table');
-      const trh2 = el('tr');
-      ['代办内容', '完成时间'].forEach((h) => trh2.appendChild(el('th', '', h)));
-      const thead2 = el('thead');
-      thead2.appendChild(trh2);
-      tbl2.appendChild(thead2);
-      const tbody2 = el('tbody');
-      done.forEach((t) => {
-        const tr = el('tr', 'todo-done-row');
-        const td = el('td'); td.textContent = t.text; tr.appendChild(td);
-        const td2 = el('td'); td2.textContent = new Date(t.doneAt).toLocaleString('zh-CN'); tr.appendChild(td2);
-        tbody2.appendChild(tr);
-      });
-      tbl2.appendChild(tbody2);
-      box.appendChild(tbl2);
-    } else {
-      box.appendChild(el('div', 'modal-hint', '还没有已完成的代办。'));
-    }
+    };
+    tabA.onclick = () => { todoView = 'active'; renderList(); };
+    tabD.onclick = () => { todoView = 'done'; renderList(); };
+    renderList();
   }
 
   // ---------- 款项统计（admin 维护；非 admin 只看经手人是自己的行） ----------
