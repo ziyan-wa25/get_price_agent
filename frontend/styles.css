@@ -580,11 +580,11 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .nostock-table tr.dragging td { opacity: .45; }
 
 /* ---------- 代办事项（参考独立设计稿融合：卡片式 + 标签页 + 圆形对勾 + 拖动排序） ---------- */
-.todo-composer { display: flex; gap: 10px; padding: 10px; background: #fff; border: 1px solid #edf0f3; border-radius: 14px; box-shadow: 0 3px 14px rgba(32, 37, 45, .05); transition: border-color .15s, box-shadow .15s; }
-.todo-composer:focus-within { border-color: #bcd0ff; box-shadow: 0 3px 18px rgba(77, 107, 254, .14); }
-.todo-add-btn { flex: none; border: 0; border-radius: 10px; background: linear-gradient(180deg, #5b7bff, #4d6bfe); color: #fff; padding: 9px 20px; font-weight: 600; font-size: 14px; font-family: inherit; cursor: pointer; box-shadow: 0 3px 10px rgba(77, 107, 254, .3); transition: background .15s, transform .1s, box-shadow .15s; }
-.todo-add-btn:hover { background: linear-gradient(180deg, #4d6bfe, #4167e8); box-shadow: 0 4px 14px rgba(77, 107, 254, .38); transform: translateY(-1px); }
-.todo-add-btn:active { transform: translateY(0); box-shadow: 0 2px 6px rgba(77, 107, 254, .3); }
+.todo-composer { display: flex; gap: 10px; padding: 10px; background: #fff; border: 1px solid #edf0f3; border-radius: 14px; box-shadow: 0 3px 14px rgba(32, 37, 45, .05); }
+/* 「＋添加」按钮：与应用工具栏按钮统一风格（同 .stock-toolbar button.primary：扁平主色、8px 圆角、hover 加深） */
+.todo-add-btn { flex: none; padding: 6px 16px; font-size: 13px; border: 1px solid #4d6bfe; border-radius: 8px; background: #4d6bfe; color: #fff; cursor: pointer; font-family: inherit; transition: background .15s; }
+.todo-add-btn:hover { background: #3d5af1; }
+.todo-add-btn:active { background: #3d5af1; }
 .todo-composer input { flex: 1; min-width: 0; border: 0; outline: 0; padding: 8px 10px; font: inherit; color: #20252d; background: transparent; }
 .todo-composer input::placeholder { color: #a9afb8; }
 .todo-card { margin-top: 16px; overflow: hidden; background: #fff; border: 1px solid #edf0f3; border-radius: 14px; box-shadow: 0 3px 14px rgba(32, 37, 45, .05); }
