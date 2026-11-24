@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-85（待办「＋添加」按钮专门美化：渐变主色+悬浮质感+输入栏聚焦光晕）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-86（待办完成/取消/删除改乐观更新：点击立即生效不等网络，失败回滚）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3345,11 +3345,16 @@
         }
         const check = el('button', 'todo-check', isDone ? '✓' : '');
         check.title = isDone ? '标记为未完成' : '完成';
-        check.onclick = async () => {
-          try {
-            await api('POST', '/api/todo-item', { action: 'done', id: t.id, value: !isDone });
-            refreshTodos();
-          } catch (e) { alert(e.message); }
+        check.onclick = () => {
+          // 乐观更新：先改本地缓存立即重绘（点击即消失/出现，不等网络），后台同步云端，失败回滚
+          const prevDone = t.done;
+          const prevDoneAt = t.doneAt;
+          t.done = !prevDone;
+          t.doneAt = t.done ? Date.now() : 0;
+          renderTodoPage();
+          api('POST', '/api/todo-item', { action: 'done', id: t.id, value: t.done })
+            .then(() => refreshTodos())
+            .catch((e) => { t.done = prevDone; t.doneAt = prevDoneAt; renderTodoPage(); alert('保存失败：' + e.message); });
         };
         row.appendChild(check);
         const bodyDiv = el('div', 'todo-body');
@@ -3358,12 +3363,14 @@
         row.appendChild(bodyDiv);
         const del = el('button', 'todo-del', '×');
         del.title = '删除';
-        del.onclick = async () => {
+        del.onclick = () => {
           if (isDone && !confirm('确定删除这条完成记录吗？')) return;
-          try {
-            await api('POST', '/api/todo-item', { action: 'delete', id: t.id });
-            refreshTodos();
-          } catch (e) { alert(e.message); }
+          const idx = all.indexOf(t);
+          if (idx >= 0) all.splice(idx, 1); // 乐观删除：先从本地移除立即重绘
+          renderTodoPage();
+          api('POST', '/api/todo-item', { action: 'delete', id: t.id })
+            .then(() => refreshTodos())
+            .catch((e) => { if (idx >= 0) all.splice(Math.min(idx, all.length), 0, t); renderTodoPage(); alert('删除失败：' + e.message); });
         };
         row.appendChild(del);
         listEl.appendChild(row);
