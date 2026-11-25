@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261120-fix22">
+  <link rel="stylesheet" href="styles.css?v=20261120-fix23">
 </head>
 
 <body>
@@ -67,6 +67,7 @@
       <button id="btn-perf" class="side-btn">📈 业绩报表</button>
       <button id="btn-todo" class="side-btn">✅ 代办事项</button>
       <button id="btn-pay" class="side-btn">💰 款项统计</button>
+      <button id="btn-io" class="side-btn">📥 出入库</button>
       <div class="side-label">历史报价</div>
       <div id="history-list" class="history-list"></div>
       <div class="side-footer">
@@ -164,6 +165,13 @@
         </div>
         <div id="pay-content" class="price-content"></div>
       </div>
+      <!-- 出入库页（序列号=上传的 Excel 工作簿；每个工作表=一个分表；可见/可编辑按分表勾名单） -->
+      <div id="io-page" class="price-page hidden">
+        <div class="price-toolbar">
+          <div id="io-info" class="stock-info"></div>
+        </div>
+        <div id="io-content" class="price-content"></div>
+      </div>
     </main>
 
     <!-- 手机底部导航（≤768px 才显示；点击转发到侧栏对应按钮，逻辑零重复） -->
@@ -187,12 +195,12 @@
     </div>
   </div>
 
-  <script src="config.js?v=20261120-fix22"></script>
-  <script src="app.js?v=20261120-fix22"></script>
+  <script src="config.js?v=20261120-fix23"></script>
+  <script src="app.js?v=20261120-fix23"></script>
   <script>
     // PWA：注册 Service Worker（仅 https 或 localhost 生效；用 file:// 本地打开时自动跳过，不影响任何现有功能）
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
-          window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=20261120-fix22').catch(function () {}); });
+          window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=20261120-fix23').catch(function () {}); });
     }
   </script>
 </body>

@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-88（内容与 87 相同：仅用于重新触发 Pages 部署）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-89（新增出入库：序列号=Excel 工作簿→多分表；分表级可见/可编辑名单；上传建表/回溯替换；行时间正序末尾追加；导出含记录时间/记录人）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -249,7 +249,7 @@
 
   function prefetchAll() {
     // 登录后后台并行预取各页数据（全部只读 GET）：配合各页“缓存秒开”，切换页面不再等“加载中”
-    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, loadPerf, loadTodos, loadPayments, prefetchFavUsers, prefetchNoStock].forEach((fn) => {
+    [loadStock, loadRecv, loadInv, loadFav, loadApps, loadDispatch, loadPriceData, loadPerf, loadTodos, loadPayments, loadIo, prefetchFavUsers, prefetchNoStock].forEach((fn) => {
       try { fn(); } catch (e) { /* 预取失败不打扰用户，切页时仍会正常加载 */ }
     });
     if (me && me.role === 'admin') {
@@ -2773,6 +2773,7 @@
     $('#perf-page').classList.toggle('hidden', p !== 'perf');
     $('#todo-page').classList.toggle('hidden', p !== 'todo');
     $('#pay-page').classList.toggle('hidden', p !== 'pay');
+    $('#io-page').classList.toggle('hidden', p !== 'io');
     $('#btn-prices').classList.toggle('active', p === 'price');
     $('#btn-stock').classList.toggle('active', p === 'stock');
     $('#btn-recv').classList.toggle('active', p === 'recv');
@@ -2783,6 +2784,7 @@
     $('#btn-perf').classList.toggle('active', p === 'perf');
     $('#btn-todo').classList.toggle('active', p === 'todo');
     $('#btn-pay').classList.toggle('active', p === 'pay');
+    $('#btn-io').classList.toggle('active', p === 'io');
     if (p === 'price') loadPriceData();
     if (p === 'stock') loadStock();
     if (p === 'recv') loadRecv();
@@ -2793,6 +2795,7 @@
     if (p === 'perf') loadPerf();
     if (p === 'todo') loadTodos();
     if (p === 'pay') loadPayments();
+    if (p === 'io') loadIo();
   }
 
   // ---------- 业绩报表（admin 导入「经营分析」表；业务员只看自己的行；月到款考核含提成与季度加和） ----------
@@ -3379,6 +3382,287 @@
     tabA.onclick = () => { todoView = 'active'; renderList(); };
     tabD.onclick = () => { todoView = 'done'; renderList(); };
     renderList();
+  }
+
+  // ---------- 出入库（出入库序列号 = 上传的 Excel 工作簿；每个工作表 = 一个分表；可见/可编辑按分表勾名单；行按时间正序，新行始终在最下方） ----------
+  let ioData = null;
+  let ioBookId = '';
+  let ioSheetId = '';
+
+  async function loadIo() {
+    const box = $('#io-content');
+    if (ioData) { renderIoPage(); refreshIo(); return; } // 缓存秒开 + 后台静默刷新
+    box.innerHTML = '';
+    box.appendChild(el('div', 'modal-hint', '加载中…'));
+    try {
+      ioData = await api('GET', '/api/io');
+      renderIoPage();
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+    }
+  }
+
+  function refreshIo() {
+    api('GET', '/api/io').then((d) => { ioData = d; renderIoPage(); }).catch(() => {});
+  }
+
+  async function exportIoExcel(sheet) {
+    try {
+      const r = await api('POST', '/api/io-export', { sheetId: sheet.id });
+      const bin = atob(r.dataBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = el('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = r.filename || '出入库导出.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    } catch (e) { alert('导出失败：' + e.message); }
+  }
+
+  function renderIoPage() {
+    const box = $('#io-content');
+    const info = $('#io-info');
+    info.innerHTML = '';
+    info.appendChild(el('span', 'stock-import-time', '出入库 · 一个序列号对应一份 Excel 工作簿，其中每个工作表是一个分表；行按时间正序，新行始终在最下方'));
+    const d = ioData || { books: [] };
+    const books = d.books || [];
+    box.innerHTML = '';
+    if (!books.length) {
+      const tip = el('div', 'modal-hint', d.canUpload ? '还没有出入库序列号。点「上传序列号表」导入第一份 Excel（工作簿里每个工作表会成为一个分表）。' : '暂无可见的出入库分表（需要管理员在对应分表把你的账号勾进「可见」名单）。');
+      tip.style.padding = '30px 12px';
+      box.appendChild(tip);
+      return;
+    }
+    const book = books.find((b) => b.id === ioBookId) || books[0];
+    ioBookId = book.id;
+    const sheet = (book.sheets || []).find((s) => s.id === ioSheetId) || (book.sheets || [])[0];
+    ioSheetId = sheet ? sheet.id : '';
+
+    // 工具栏：序列号选择 + 上传/删除（admin）+ 导出当前分表
+    const bar = el('div', 'stock-toolbar');
+    if (books.length > 1 || d.canUpload) {
+      const sel = el('select', 'edit-input');
+      books.forEach((b) => {
+        const op = el('option', '', b.serial + '（' + (b.sheets || []).length + ' 分表）');
+        op.value = b.id;
+        if (b.id === ioBookId) op.selected = true;
+        sel.appendChild(op);
+      });
+      sel.onchange = () => { ioBookId = sel.value; ioSheetId = ''; renderIoPage(); };
+      bar.appendChild(sel);
+    }
+    if (d.canUpload) {
+      const serialInp = el('input', 'edit-input');
+      serialInp.placeholder = '序列号（留空=用文件名）';
+      serialInp.style.width = '180px';
+      const file = el('input');
+      file.type = 'file';
+      file.accept = '.xlsx,.xls';
+      file.style.display = 'none';
+      const bUp = el('button', 'primary', '📤 上传序列号表');
+      bUp.onclick = () => file.click();
+      file.onchange = () => {
+        const f = file.files && file.files[0];
+        if (!f) return;
+        const serial = serialInp.value.trim() || f.name.replace(/\.[^.]+$/, '');
+        const rd = new FileReader();
+        rd.onload = async () => {
+          try {
+            const r = await api('POST', '/api/io-item', { action: 'upload', serial, dataBase64: rd.result.split(',')[1] });
+            alert((r.replaced ? '已替换「' + r.serial + '」（回溯）' : '已新建「' + r.serial + '」') + '：' + r.sheets + ' 个分表 / ' + r.rows + ' 行。同名分表保留了原有权限名单。');
+            ioBookId = '';
+            ioSheetId = '';
+            refreshIo();
+          } catch (e) { alert(e.message); }
+          file.value = '';
+        };
+        rd.readAsDataURL(f);
+      };
+      const bDelBook = el('button', 'danger', '🗑 删序列号');
+      bDelBook.onclick = async () => {
+        if (!confirm('确定删除序列号「' + book.serial + '」及其全部分表吗？（不可恢复）')) return;
+        try {
+          await api('POST', '/api/io-item', { action: 'delete-book', bookId: book.id });
+          ioBookId = '';
+          ioSheetId = '';
+          refreshIo();
+        } catch (e) { alert(e.message); }
+      };
+      bar.appendChild(serialInp);
+      bar.appendChild(bUp);
+      bar.appendChild(bDelBook);
+      bar.appendChild(file);
+    }
+    const bExp = el('button', '', '⬇️ 导出当前分表');
+    bExp.onclick = () => { if (sheet) exportIoExcel(sheet); else alert('请先选择一个分表'); };
+    bar.appendChild(bExp);
+    box.appendChild(bar);
+
+    // 分表标签行
+    const tabs = el('div', 'io-tabs');
+    (book.sheets || []).forEach((s) => {
+      const t = el('button', 'io-tab' + (s.id === ioSheetId ? ' active' : ''));
+      t.textContent = s.name;
+      t.onclick = () => { ioSheetId = s.id; renderIoPage(); };
+      tabs.appendChild(t);
+    });
+    box.appendChild(tabs);
+
+    if (!sheet) {
+      box.appendChild(el('div', 'modal-hint', '该序列号下暂无可见分表。'));
+      return;
+    }
+
+    // 分表级操作（admin）：权限名单 + 删分表
+    const subBar = el('div', 'stock-toolbar');
+    if (d.isAdmin) {
+      const bPerm = el('button', '', '👥 分表权限');
+      bPerm.onclick = () => openIoPermModal(sheet);
+      subBar.appendChild(bPerm);
+      const bDelSheet = el('button', 'danger', '🗑 删分表');
+      bDelSheet.onclick = async () => {
+        if (!confirm('确定删除分表「' + sheet.name + '」吗？（不可恢复）')) return;
+        try {
+          await api('POST', '/api/io-item', { action: 'delete-sheet', sheetId: sheet.id });
+          ioSheetId = '';
+          refreshIo();
+        } catch (e) { alert(e.message); }
+      };
+      subBar.appendChild(bDelSheet);
+      subBar.appendChild(el('span', 'stock-hint', '可见 / 可编辑名单按分表单独生效；admin 始终全权。'));
+    }
+    box.appendChild(subBar);
+
+    // 数据表：列 = 上传文件表头 + 记录时间/记录人（系统列）；导入行标记（导入）
+    const wrap = el('div', 'io-table-wrap');
+    const tbl = el('table', 'stock-table io-table');
+    const trh = el('tr');
+    (sheet.columns || []).forEach((h) => trh.appendChild(el('th', '', h)));
+    trh.appendChild(el('th', 'io-meta-th', '记录时间'));
+    trh.appendChild(el('th', 'io-meta-th', '记录人'));
+    const thead = el('thead');
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+    const tbody = el('tbody');
+    (sheet.rows || []).forEach((r) => {
+      const tr = el('tr');
+      (r.v || []).forEach((c) => { const td = el('td'); td.textContent = c; tr.appendChild(td); });
+      const tdA = el('td', 'io-meta');
+      tdA.textContent = r.at ? new Date(r.at).toLocaleString('zh-CN') : '（导入）';
+      tr.appendChild(tdA);
+      const tdB = el('td', 'io-meta');
+      tdB.textContent = r.at ? (r.by || '') : '（导入）';
+      tr.appendChild(tdB);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+    box.appendChild(wrap);
+    wrap.scrollTop = wrap.scrollHeight; // 默认定位到最下方（最新位置）
+
+    // 追加行表单（可编辑者）：每列一个输入框；扫码枪在输入框内扫入即填，回车提交
+    if (sheet.canEdit) {
+      const rowsAll = sheet.rows || [];
+      const last = rowsAll.length ? rowsAll[rowsAll.length - 1] : { v: [] };
+      const form = el('div', 'io-append');
+      const inputs = [];
+      (sheet.columns || []).forEach((h, ci) => {
+        const inp = el('input', 'edit-input io-append-input');
+        inp.placeholder = h;
+        const lastVal = String((last.v || [])[ci] == null ? '' : (last.v || [])[ci]).trim();
+        if (/序号|第.{0,4}个/.test(h) && /^\d+$/.test(lastVal)) inp.value = String(Number(lastVal) + 1); // 序号列自动 +1
+        else if (/合计|总数/.test(h) && lastVal) inp.value = lastVal; // 合计列沿用上一行（同一批）
+        inputs.push(inp);
+        form.appendChild(inp);
+      });
+      const bAdd = el('button', 'todo-add-btn', '＋ 添加');
+      const submit = async () => {
+        const values = inputs.map((i) => i.value);
+        if (!values.some((v) => String(v).trim() !== '')) { if (inputs[0]) inputs[0].focus(); return; }
+        try {
+          const r = await api('POST', '/api/io-item', { action: 'append', sheetId: sheet.id, values });
+          (ioData.books || []).forEach((b) => {
+            const s = (b.sheets || []).find((x) => x.id === sheet.id);
+            if (s) (s.rows = s.rows || []).push(r.row); // 乐观追加：先上屏再后台刷新
+          });
+          inputs.forEach((i) => {
+            const idx = inputs.indexOf(i);
+            const h = (sheet.columns || [])[idx] || '';
+            const cur = String(i.value).trim();
+            if (/序号|第.{0,4}个/.test(h) && /^\d+$/.test(cur)) i.value = String(Number(cur) + 1);
+            else if (!/合计|总数/.test(h)) i.value = '';
+          });
+          renderIoPage();
+          refreshIo();
+        } catch (e) { alert(e.message); }
+      };
+      bAdd.onclick = submit;
+      inputs.forEach((i, idx) => {
+        i.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+        if (idx === 0 && !i.value) setTimeout(() => i.focus(), 0);
+      });
+      form.appendChild(bAdd);
+      box.appendChild(form);
+      box.appendChild(el('div', 'modal-hint', '追加的行显示在表格最下方；表头含「序号」的列自动 +1、含「合计」的列沿用上一行（同一批），均可手动改。'));
+    }
+  }
+
+  // 分表权限弹窗（admin）：可编辑名单 + 可见名单（点保存统一提交）
+  function openIoPermModal(sheet) {
+    openModal('分表权限 — ' + sheet.name);
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '勾选「可编辑」的成员可以在该分表末尾追加记录；「可见」的成员能查看该分表（编辑者自动可见）。一个都不勾 = 仅 admin 可见可编辑。'));
+    const names = ioData && ioData.usernames ? ioData.usernames.filter((u) => u !== me.username) : [];
+    const edSel = new Set(sheet.editors || []);
+    const vwSel = new Set(sheet.viewers || []);
+    const grid = el('div', 'io-perm-grid');
+    grid.appendChild(el('div', 'io-perm-head', '成员'));
+    grid.appendChild(el('div', 'io-perm-head', '可编辑'));
+    grid.appendChild(el('div', 'io-perm-head', '可见'));
+    names.forEach((u) => {
+      grid.appendChild(el('div', 'io-perm-name', u));
+      const tdE = el('div', 'io-perm-cb');
+      const cbE = el('input');
+      cbE.type = 'checkbox';
+      cbE.checked = edSel.has(u);
+      tdE.appendChild(cbE);
+      grid.appendChild(tdE);
+      const tdV = el('div', 'io-perm-cb');
+      const cbV = el('input');
+      cbV.type = 'checkbox';
+      cbV.checked = vwSel.has(u);
+      tdV.appendChild(cbV);
+      grid.appendChild(tdV);
+      cbE.onchange = () => {
+        if (cbE.checked) { edSel.add(u); vwSel.add(u); cbV.checked = true; }
+        else edSel.delete(u);
+      };
+      cbV.onchange = () => {
+        if (cbV.checked) vwSel.add(u);
+        else { vwSel.delete(u); if (edSel.has(u)) { edSel.delete(u); cbE.checked = false; } }
+      };
+    });
+    body.appendChild(grid);
+    const actBar = el('div', 'modal-actions');
+    const bSave = el('button', 'primary', '保存');
+    bSave.onclick = async () => {
+      try {
+        const r = await api('POST', '/api/io-item', { action: 'setperm', sheetId: sheet.id, editors: [...edSel], viewers: [...vwSel] });
+        sheet.editors = r.editors;
+        sheet.viewers = r.viewers;
+        closeModal();
+        renderIoPage();
+      } catch (e) { alert(e.message); }
+    };
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    actBar.appendChild(bSave);
+    actBar.appendChild(bCancel);
+    body.appendChild(actBar);
   }
 
   // ---------- 款项统计（admin 维护；非 admin 只看经手人是自己的行） ----------
@@ -5023,6 +5307,7 @@
   $('#btn-perf').onclick = () => showPage('perf');
   $('#btn-todo').onclick = () => showPage('todo');
   $('#btn-pay').onclick = () => showPage('pay');
+  $('#btn-io').onclick = () => showPage('io');
   $('#dispatch-search').oninput = () => renderDispatchPage();
   $('#btn-settings').onclick = () => openSettingsModal();
   $('#btn-exit-imp').onclick = () => {
