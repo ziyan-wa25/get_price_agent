@@ -615,10 +615,7 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 #fav-content tr.drag-over td { background: #f5f8ff; border-top: 2px solid #4d6bfe; }
 
 /* ---------- 出入库（序列号=Excel 工作簿；每个工作表=一个分表；时间正序，新行在末尾） ---------- */
-.io-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.io-tab { padding: 7px 14px; border: 1px solid #d9dce1; border-radius: 8px; background: #fff; color: #333; font-size: 13px; font-family: inherit; cursor: pointer; }
-.io-tab:hover { background: #f3f4f6; }
-.io-tab.active { background: #4d6bfe; border-color: #4d6bfe; color: #fff; font-weight: 600; }
+/* 分表标签复用 .price-tab（同业绩报表 月业绩/月到款 形式） */
 .io-table-wrap { overflow: auto; max-height: 62vh; border: 1px solid #d9dce1; border-radius: 8px; background: #fff; }
 .io-table { min-width: 100%; }
 .io-meta-th { color: #89909b; font-weight: 600; }
@@ -630,6 +627,8 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .io-perm-name { font-size: 13.5px; color: #20252d; }
 .io-perm-cb { text-align: center; }
 .io-perm-cb input { width: 16px; height: 16px; cursor: pointer; }
+.io-perm-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.io-perm-sheet { flex: 1; font-size: 13.5px; color: #20252d; }
 /* 应收明细：往来客户检索框 + admin 行编辑悬停 */
 .recv-client-input {
   width: 200px; padding: 6px 10px; font-size: 13px;

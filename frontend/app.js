@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-89（新增出入库：序列号=Excel 工作簿→多分表；分表级可见/可编辑名单；上传建表/回溯替换；行时间正序末尾追加；导出含记录时间/记录人）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-90（出入库修复：空状态也显示上传入口；分表标签改业绩报表同款；设置新增「出入库权限管理」折叠区；侧栏顺序本地缓存消除闪动；库存合计行置顶；应收日期表头点击排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -242,6 +242,7 @@
     resetUserData(); // 清掉上一任用户留在内存里的页面数据（价格/库存/应收/历史），防止越权残留
     newChat();
     loadHistory(); // 历史报价体积大，按需求不参与并行预取（避免压力过大），仅在登录时正常加载
+    applyCachedPrefs(); // 先按本地缓存摆好侧栏顺序/开关（无闪动），云端确认紧随其后
     loadPrefs();
     prefetchAll();
     $('#input').focus();
@@ -1373,7 +1374,7 @@
       const tdC = el('td', 'num'); tdC.textContent = fmtCost(Math.round(costSum)); tdC.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）'; tr.appendChild(tdC);
       const tdP = el('td', 'num'); tdP.textContent = fmtSale(Math.round(priceSum)); tdP.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）'; tr.appendChild(tdP);
       const tdGap2 = el('td'); tdGap2.colSpan = 2; tr.appendChild(tdGap2);
-      tbody.appendChild(tr);
+      tbody.insertBefore(tr, tbody.firstChild); // 合计固定显示在最上面一行（表头之下第一行）
     }
     tbl.appendChild(tbody);
     box.appendChild(tbl);
@@ -1683,6 +1684,8 @@
     return rows;
   }
 
+  let recvDateSort = 0; // 应收明细日期排序：0=默认（导入顺序）1=正序 2=倒序（点表头「日期」切换）
+
   // 日期距今超过两个月（按自然月）→ true；解析失败返回 false
   function isOverdueDate(dateStr) {
     const d = new Date(String(dateStr || '').trim());
@@ -1778,6 +1781,11 @@
     }
 
     const rows = recvVisible();
+    if (recvDateSort !== 0) {
+      // 点「日期」表头排序：日期为 ISO 格式（2025-04-21），字典序即时间序；同日期按 id 稳定
+      const cmp = (a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''));
+      rows.sort(recvDateSort === 1 ? cmp : (a, b) => cmp(b, a));
+    }
     const heads = ['日期', '往来客户', '货品名称', '交易数量', '交易单价', '应收增加', '附加说明', '经手人'];
     const tbl = el('table', 'stock-table recv-table');
     const trh = el('tr');
@@ -1801,6 +1809,14 @@
       else if (h === '经手人') cls = 'col-op';
       trh.appendChild(el('th', cls, h));
     });
+    // 日期表头可点击：正序 ▲ / 倒序 ▼ 循环切换（其余列头不受影响）
+    const thDate = [...trh.children].find((th) => th.classList.contains('col-date'));
+    if (thDate) {
+      thDate.classList.add('th-sortable');
+      thDate.title = '点击按日期排序：正序 / 倒序切换';
+      thDate.textContent = '日期' + (recvDateSort === 1 ? ' ▲' : recvDateSort === 2 ? ' ▼' : '');
+      thDate.onclick = () => { recvDateSort = recvDateSort === 1 ? 2 : 1; renderRecvPage(); };
+    }
     const thead = el('thead');
     thead.appendChild(trh);
     tbl.appendChild(thead);
@@ -2579,8 +2595,26 @@
 
   // ---------- 设置（左下角 ⚙️；个人偏好存后端跟账号走，之后可扩展更多设置项） ----------
   let prefs = null;
+  const PREFS_CACHE_PREFIX = 'qa_prefs_cache_'; // 按用户名缓存侧栏顺序/开关：登录瞬间先按缓存摆好，消除“先默认后跳变”的闪动
 
-  const PAGE_ORDER_KEYS = ['btn-stock', 'btn-recv', 'btn-inv', 'btn-fav', 'btn-apps', 'btn-dispatch', 'btn-perf', 'btn-todo', 'btn-pay'];
+  function savePrefsCache() {
+    if (!me || !me.username || !prefs) return;
+    try { localStorage.setItem(PREFS_CACHE_PREFIX + me.username, JSON.stringify(prefs)); } catch (e) { /* 隐私模式等场景忽略 */ }
+  }
+
+  function applyCachedPrefs() {
+    // enterApp 起始同步调用：先用本地缓存的个人设置摆好侧栏，再等云端确认（无声刷新）
+    if (!me || !me.username) return;
+    prefs = null;
+    try {
+      const raw = localStorage.getItem(PREFS_CACHE_PREFIX + me.username);
+      const cached = raw ? JSON.parse(raw) : null;
+      if (cached && typeof cached === 'object' && !Array.isArray(cached)) prefs = cached;
+    } catch (e) { prefs = null; }
+    if (prefs) applyPrefs();
+  }
+
+  const PAGE_ORDER_KEYS = ['btn-stock', 'btn-recv', 'btn-inv', 'btn-fav', 'btn-apps', 'btn-dispatch', 'btn-perf', 'btn-todo', 'btn-pay', 'btn-io'];
 
   function applyPageOrder() {
     // 个人侧栏功能排序（仅桌面侧栏；手机抽屉与侧栏同源跟随，底部导航不变）
@@ -2602,6 +2636,7 @@
     $('#btn-apps').classList.toggle('hidden', !!(prefs && prefs.hideApps));
     $('#btn-todo').classList.toggle('hidden', !!(prefs && prefs.hideTodos)); // 代办事项开关，与应用收藏夹一致
     applyPageOrder();
+    savePrefsCache(); // 每次应用时同步本地缓存（云端为准，缓存只做“首屏秒定”）
     if (prefs && prefs.hideApps && !$('#apps-page').classList.contains('hidden')) showPage('chat');
     if (prefs && prefs.hideTodos && !$('#todo-page').classList.contains('hidden')) showPage('chat');
   }
@@ -2756,6 +2791,42 @@
         } catch (e) {
           secPerm.innerHTML = '';
           secPerm.appendChild(el('div', 'modal-hint', '权限表加载失败：' + e.message));
+        }
+      })();
+
+      // admin：出入库权限管理（每个分表单独的 可见/可编辑 名单）——与出入库页的「👥 分表权限」同一入口
+      const ioTop = mkCollapse('出入库权限管理（按分表）', false);
+      body.appendChild(ioTop.head);
+      body.appendChild(ioTop.sec);
+      const secIo = ioTop.sec;
+      const renderIoPermSec = (dat) => {
+        secIo.innerHTML = '';
+        if (!dat) { secIo.appendChild(el('div', 'modal-hint', '加载出入库数据中…')); return; }
+        if (!(dat.books || []).length) { secIo.appendChild(el('div', 'modal-hint', '暂无出入库序列号：在「出入库」页上传 Excel 后，这里会按分表列出授权入口。')); return; }
+        secIo.appendChild(el('div', 'modal-hint', '每个分表单独授权：点「设置名单」勾选各成员的 可编辑 / 可见（编辑者自动可见），保存立即生效。'));
+        (dat.books || []).forEach((b) => {
+          secIo.appendChild(el('div', 'settings-label', '序列号：' + b.serial));
+          (b.sheets || []).forEach((s) => {
+            const row = el('div', 'io-perm-row');
+            row.appendChild(el('span', 'io-perm-sheet', '· ' + s.name + '（编辑 ' + (s.editors || []).length + ' / 可见 ' + (s.viewers || []).length + '）'));
+            const btn = el('button', '', '👥 设置名单');
+            btn.onclick = () => openIoPermModal(s);
+            row.appendChild(btn);
+            secIo.appendChild(row);
+          });
+        });
+      };
+      renderIoPermSec(ioData);
+      (async () => {
+        try {
+          const fresh = await api('GET', '/api/io');
+          ioData = fresh;
+          if (secIo.isConnected) renderIoPermSec(fresh); // 弹窗还开着才刷新
+        } catch (e) {
+          if (secIo.isConnected && !ioData) {
+            secIo.innerHTML = '';
+            secIo.appendChild(el('div', 'modal-hint', '出入库数据加载失败：' + e.message + '（若提示接口不存在，请先部署最新的 scf-deploy.zip）'));
+          }
         }
       })();
     }
@@ -3399,7 +3470,10 @@
       renderIoPage();
     } catch (e) {
       box.innerHTML = '';
-      box.appendChild(el('div', 'modal-hint', '加载失败：' + e.message));
+      const msg = /未知|不存在|404|Cannot/.test(e.message)
+        ? '云端后端还没有出入库接口：需要把最新的 dist/scf-deploy.zip 上传部署到腾讯云函数后才能使用。'
+        : ('加载失败：' + e.message);
+      box.appendChild(el('div', 'modal-hint', msg));
     }
   }
 
@@ -3431,20 +3505,27 @@
     const d = ioData || { books: [] };
     const books = d.books || [];
     box.innerHTML = '';
-    if (!books.length) {
-      const tip = el('div', 'modal-hint', d.canUpload ? '还没有出入库序列号。点「上传序列号表」导入第一份 Excel（工作簿里每个工作表会成为一个分表）。' : '暂无可见的出入库分表（需要管理员在对应分表把你的账号勾进「可见」名单）。');
+    if (!books.length && !d.canUpload) {
+      const tip = el('div', 'modal-hint', '暂无可见的出入库分表（需要管理员在对应分表把你的账号勾进「可见」名单）。');
       tip.style.padding = '30px 12px';
       box.appendChild(tip);
       return;
     }
-    const book = books.find((b) => b.id === ioBookId) || books[0];
-    ioBookId = book.id;
-    const sheet = (book.sheets || []).find((s) => s.id === ioSheetId) || (book.sheets || [])[0];
+    const book = books.find((b) => b.id === ioBookId) || books[0] || null;
+    ioBookId = book ? book.id : '';
+    const sheet = book ? ((book.sheets || []).find((s) => s.id === ioSheetId) || (book.sheets || [])[0] || null) : null;
     ioSheetId = sheet ? sheet.id : '';
 
-    // 工具栏：序列号选择 + 上传/删除（admin）+ 导出当前分表
+    // 工具栏（同业绩报表 月业绩/月到款 形式）：分表标签在工具栏一行内 + 序列号选择 + 上传/删除（admin）+ 导出
     const bar = el('div', 'stock-toolbar');
-    if (books.length > 1 || d.canUpload) {
+    if (book) {
+      (book.sheets || []).forEach((s) => {
+        const t = el('button', 'price-tab' + (s.id === ioSheetId ? ' active' : ''), s.name);
+        t.onclick = () => { ioSheetId = s.id; renderIoPage(); };
+        bar.appendChild(t);
+      });
+    }
+    if (books.length > 1) {
       const sel = el('select', 'edit-input');
       books.forEach((b) => {
         const op = el('option', '', b.serial + '（' + (b.sheets || []).length + ' 分表）');
@@ -3482,36 +3563,34 @@
         };
         rd.readAsDataURL(f);
       };
-      const bDelBook = el('button', 'danger', '🗑 删序列号');
-      bDelBook.onclick = async () => {
-        if (!confirm('确定删除序列号「' + book.serial + '」及其全部分表吗？（不可恢复）')) return;
-        try {
-          await api('POST', '/api/io-item', { action: 'delete-book', bookId: book.id });
-          ioBookId = '';
-          ioSheetId = '';
-          refreshIo();
-        } catch (e) { alert(e.message); }
-      };
       bar.appendChild(serialInp);
       bar.appendChild(bUp);
-      bar.appendChild(bDelBook);
+      if (book) {
+        const bDelBook = el('button', 'danger', '🗑 删序列号');
+        bDelBook.onclick = async () => {
+          if (!confirm('确定删除序列号「' + book.serial + '」及其全部分表吗？（不可恢复）')) return;
+          try {
+            await api('POST', '/api/io-item', { action: 'delete-book', bookId: book.id });
+            ioBookId = '';
+            ioSheetId = '';
+            refreshIo();
+          } catch (e) { alert(e.message); }
+        };
+        bar.appendChild(bDelBook);
+      }
       bar.appendChild(file);
     }
-    const bExp = el('button', '', '⬇️ 导出当前分表');
-    bExp.onclick = () => { if (sheet) exportIoExcel(sheet); else alert('请先选择一个分表'); };
-    bar.appendChild(bExp);
+    if (sheet) {
+      const bExp = el('button', '', '⬇️ 导出当前分表');
+      bExp.onclick = () => exportIoExcel(sheet);
+      bar.appendChild(bExp);
+    }
     box.appendChild(bar);
 
-    // 分表标签行
-    const tabs = el('div', 'io-tabs');
-    (book.sheets || []).forEach((s) => {
-      const t = el('button', 'io-tab' + (s.id === ioSheetId ? ' active' : ''));
-      t.textContent = s.name;
-      t.onclick = () => { ioSheetId = s.id; renderIoPage(); };
-      tabs.appendChild(t);
-    });
-    box.appendChild(tabs);
-
+    if (!book) {
+      box.appendChild(el('div', 'modal-hint', '还没有出入库序列号：填写序列号（留空=用文件名），点「📤 上传序列号表」导入第一份 Excel——工作簿里每个工作表会成为一个分表。'));
+      return;
+    }
     if (!sheet) {
       box.appendChild(el('div', 'modal-hint', '该序列号下暂无可见分表。'));
       return;
