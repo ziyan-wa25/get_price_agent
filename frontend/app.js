@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-91（出入库大文件架构：浏览器解析+3MB分片上传+分表独立存储+行窗口懒加载；导出整本还原上传原格式；设置含出入库权限管理；侧栏顺序缓存）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-92（修复：分片上传逐分表合并——之前整本覆盖导致只剩最后一个分表；上传弹窗去掉序列号输入框，序列号自动取文件名，同名文件再传=更新分表保留权限）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3568,15 +3568,12 @@
   }
 
   // 上传弹窗：浏览器解析工作簿 → 每个分表按 3MB 分片上传（begin → chunk×N → commit）
-  function openIoUploadModal(defaultSerial) {
+  // 序列号自动取文件名（去扩展名）：同名文件再次上传 = 更新对应分表（保留权限名单），无需手填
+  function openIoUploadModal() {
     openModal('上传出入库工作簿');
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '工作簿里的每个工作表会成为一个分表（同名分表保留原有 权限名单）；整本上传后即可查看与追加。支持 .xlsx / .xls，大文件自动分片上传。'));
+    body.appendChild(el('div', 'modal-hint', '工作簿里的每个工作表会成为一个分表（如：入库记录 / 出库记录 / 地址信息 / 物流单号 / 维修记录 / PN统计表）。序列号自动取文件名；同名文件再次上传 = 更新对应分表并保留权限名单，没上传到的分表不受影响。支持 .xlsx / .xls，大文件自动分片上传。'));
     const rowIn = el('div', 'modal-actions');
-    const serialInp = el('input', 'edit-input');
-    serialInp.placeholder = '序列号（留空 = 用文件名）';
-    serialInp.value = defaultSerial || '';
-    rowIn.appendChild(serialInp);
     const fileInp = el('input');
     fileInp.type = 'file';
     fileInp.accept = '.xlsx,.xls';
@@ -3636,7 +3633,7 @@
           sheets.push({ name: String(name).trim().slice(0, 60) || ('分表' + (sheets.length + 1)), columns: header, rows });
         });
         if (!sheets.length) throw new Error('Excel 中没有有效的工作表（每个分表的第一行需为表头）');
-        const serial = serialInp.value.trim() || f.name.replace(/\.[^.]+$/, '');
+        const serial = f.name.replace(/\.[^.]+$/, '');
         let totalRows = 0;
         let replaced = false;
         const CH = 3 * 1024 * 1024; // 每片 3MB（base64 后约 4MB，避开云函数 6MB 请求上限）
@@ -3655,7 +3652,7 @@
           totalRows += done.rows || 0;
           status.textContent = '「' + s.name + '」完成：' + (done.rows || 0) + ' 行';
         }
-        alert((replaced ? '已替换「' + serial + '」（回溯）' : '已新建「' + serial + '」') + '：' + sheets.length + ' 个分表 / ' + totalRows + ' 行。同名分表保留了原有权限名单。');
+        alert('已上传到「' + serial + '」：' + sheets.length + ' 个分表 / ' + totalRows + ' 行' + (replaced ? '（同名分表已更新，权限名单保留；未上传的分表不受影响）' : '（新建）'));
         closeModal();
         ioBookId = '';
         ioSheetId = '';
@@ -3720,7 +3717,7 @@
     }
     if (d.canUpload) {
       const bUp = el('button', 'primary', '📤 上传序列号表');
-      bUp.onclick = () => openIoUploadModal('');
+      bUp.onclick = () => openIoUploadModal();
       bar.appendChild(bUp);
       if (book) {
         const bDelBook = el('button', 'danger', '🗑 删序列号');
