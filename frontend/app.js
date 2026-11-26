@@ -1356,25 +1356,30 @@
       tr.appendChild(td);
       tbody.appendChild(tr);
     }
-    // 库存合计行（仅 admin）：成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价（保留整数，防撑格）。
-    // 成本价/售价为负或非数字的行在该项中忽略
+    // 库存合计行（仅 admin）：固定悬浮在表头之下不随滚动消失。
+    // 「合计」字样放货品名称列；库存量列=Σ库存量；成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价（负数/非数字行忽略）。
     if (plainView && me && me.role === 'admin' && stockData.canSeeCost && stockData.canSeePrice && items.length) {
       let costSum = 0;
       let priceSum = 0;
+      let qtySum = 0;
       items.forEach((it) => {
         const q = Number(it.qty);
         const c = Number(it.cost);
         const p = Number(it.price);
+        if (Number.isFinite(q)) qtySum += q;
         if (Number.isFinite(q) && Number.isFinite(c) && c >= 0) costSum += q * c;
         if (Number.isFinite(q) && Number.isFinite(p) && p >= 0) priceSum += q * p;
       });
-      const tr = el('tr', 'stock-total-row');
-      const tdGap = el('td'); tdGap.colSpan = 2; tr.appendChild(tdGap);
-      const tdQ = el('td', 'num'); tdQ.textContent = '合计'; tr.appendChild(tdQ);
-      const tdC = el('td', 'num'); tdC.textContent = fmtCost(Math.round(costSum)); tdC.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）'; tr.appendChild(tdC);
-      const tdP = el('td', 'num'); tdP.textContent = fmtSale(Math.round(priceSum)); tdP.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）'; tr.appendChild(tdP);
-      const tdGap2 = el('td'); tdGap2.colSpan = 2; tr.appendChild(tdGap2);
-      tbody.insertBefore(tr, tbody.firstChild); // 合计固定显示在最上面一行（表头之下第一行）
+      const tr = el('tr', 'stock-total-row'); // 放入 thead 第二行：sticky 悬浮在表头正下方（滚动时一直可见）
+      if (plainView) tr.appendChild(el('td', 'col-seq'));
+      const tdName = el('td'); tdName.textContent = '合计'; tdName.dataset.label = '合计'; tr.appendChild(tdName);
+      const tdQty = el('td', 'num'); tdQty.textContent = fmtQty(Math.round(qtySum * 1000) / 1000); tdQty.dataset.label = '库存量合计'; tdQty.title = '库存量总和'; tr.appendChild(tdQty);
+      const tdC = el('td', 'num'); tdC.textContent = fmtCost(Math.round(costSum)); tdC.dataset.label = '成本合计'; tdC.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）'; tr.appendChild(tdC);
+      const tdP = el('td', 'num'); tdP.textContent = fmtSale(Math.round(priceSum)); tdP.dataset.label = '售价合计'; tdP.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）'; tr.appendChild(tdP);
+      const tdGap1 = el('td'); tdGap1.dataset.label = ''; tr.appendChild(tdGap1);
+      const tdGap2 = el('td'); tdGap2.dataset.label = ''; tr.appendChild(tdGap2);
+      const thead2 = tbl.querySelector('thead');
+      thead2.appendChild(tr); // thead 内第二行 + CSS sticky top=表头高度 → 滚动时固定悬浮
     }
     tbl.appendChild(tbody);
     box.appendChild(tbl);
@@ -1685,6 +1690,7 @@
   }
 
   let recvDateSort = 0; // 应收明细日期排序：0=默认（导入顺序）1=正序 2=倒序（点表头「日期」切换）
+  let recvClientSort = 0; // 往来客户列排序：0=默认 1=正序 2=倒序（点表头「往来客户」切换；与日期排序互斥，后点的生效）
 
   // 日期距今超过两个月（按自然月）→ true；解析失败返回 false
   function isOverdueDate(dateStr) {
@@ -1785,6 +1791,10 @@
       // 点「日期」表头排序：日期为 ISO 格式（2025-04-21），字典序即时间序；同日期按 id 稳定
       const cmp = (a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''));
       rows.sort(recvDateSort === 1 ? cmp : (a, b) => cmp(b, a));
+    } else if (recvClientSort !== 0) {
+      // 点「往来客户」表头排序：客户名中文拼音序（localeCompare zh），同客户按 id 稳定
+      const cmp = (a, b) => String(a.client || '').localeCompare(String(b.client || ''), 'zh-Hans-CN') || String(a.id || '').localeCompare(String(b.id || ''));
+      rows.sort(recvClientSort === 1 ? cmp : (a, b) => cmp(b, a));
     }
     const heads = ['日期', '往来客户', '货品名称', '交易数量', '交易单价', '应收增加', '附加说明', '经手人'];
     const tbl = el('table', 'stock-table recv-table');
@@ -1815,7 +1825,15 @@
       thDate.classList.add('th-sortable');
       thDate.title = '点击按日期排序：正序 / 倒序切换';
       thDate.textContent = '日期' + (recvDateSort === 1 ? ' ▲' : recvDateSort === 2 ? ' ▼' : '');
-      thDate.onclick = () => { recvDateSort = recvDateSort === 1 ? 2 : 1; renderRecvPage(); };
+      thDate.onclick = () => { recvDateSort = recvDateSort === 1 ? 2 : 1; recvClientSort = 0; renderRecvPage(); };
+    }
+    // 往来客户表头同样可点击排序（与日期排序互斥：后点的生效）
+    const thClient = [...trh.children].find((th) => th.classList.contains('col-client'));
+    if (thClient) {
+      thClient.classList.add('th-sortable');
+      thClient.title = '点击按往来客户排序：正序 / 倒序切换';
+      thClient.textContent = '往来客户' + (recvClientSort === 1 ? ' ▲' : recvClientSort === 2 ? ' ▼' : '');
+      thClient.onclick = () => { recvClientSort = recvClientSort === 1 ? 2 : 1; recvDateSort = 0; renderRecvPage(); };
     }
     const thead = el('thead');
     thead.appendChild(trh);
@@ -2788,27 +2806,34 @@
             });
           });
           if (!defs.length) secPerm.appendChild(el('div', 'modal-hint', '权限注册表为空'));
+          mountIoSec(); // 出入库权限区并入功能权限管理区内部（权限表渲染完再挂载）
         } catch (e) {
           secPerm.innerHTML = '';
-          secPerm.appendChild(el('div', 'modal-hint', '权限表加载失败：' + e.message));
+          secPerm.appendChild(el('div', 'modal-hint', '权限表加载失败：' + e.message + '（出入库权限区仍可正常使用）'));
+          mountIoSec();
         }
       })();
 
-      // admin：出入库权限管理（每个分表单独的 可见/可编辑 名单）——与出入库页的「👥 分表权限」同一入口
-      const ioTop = mkCollapse('出入库权限管理（按分表）', false);
-      body.appendChild(ioTop.head);
-      body.appendChild(ioTop.sec);
+      // admin：出入库权限管理（并入「功能权限管理」区内部：按分表授权 + 物流单号备注人名名单）
+      const ioTop = mkCollapse('出入库权限（按分表授权 / 物流单号备注人名名单）', false);
       const secIo = ioTop.sec;
+      const mountIoSec = () => {
+        if (secIo.isConnected) return;
+        secPerm.appendChild(ioTop.head);
+        secPerm.appendChild(secIo);
+        renderIoPermSec(ioData);
+      };
       const renderIoPermSec = (dat) => {
         secIo.innerHTML = '';
         if (!dat) { secIo.appendChild(el('div', 'modal-hint', '加载出入库数据中…')); return; }
         if (!(dat.books || []).length) { secIo.appendChild(el('div', 'modal-hint', '暂无出入库序列号：在「出入库」页上传 Excel 后，这里会按分表列出授权入口。')); return; }
-        secIo.appendChild(el('div', 'modal-hint', '每个分表单独授权：点「设置名单」勾选各成员的 可编辑 / 可见（编辑者自动可见），保存立即生效。'));
+        secIo.appendChild(el('div', 'modal-hint', '每个分表单独授权：点「设置名单」勾选成员的 可编辑 / 可见全部 / 只看自己（物流单号三档互斥），保存立即生效。'));
         (dat.books || []).forEach((b) => {
           secIo.appendChild(el('div', 'settings-label', '序列号：' + b.serial));
           (b.sheets || []).forEach((s) => {
             const row = el('div', 'io-perm-row');
-            row.appendChild(el('span', 'io-perm-sheet', '· ' + s.name + '（编辑 ' + (s.editors || []).length + ' / 可见 ' + (s.viewers || []).length + '）'));
+            const svN = (s.selfViewers || []).length;
+            row.appendChild(el('span', 'io-perm-sheet', '· ' + s.name + '（编辑 ' + (s.editors || []).length + ' / 可见 ' + (s.viewers || []).length + (svN ? ' / 只看自己 ' + svN : '') + '）'));
             const btn = el('button', '', '👥 设置名单');
             btn.onclick = () => openIoPermModal(s);
             row.appendChild(btn);
@@ -2819,34 +2844,30 @@
         const usernames = dat.usernames || [];
         if (usernames.length) {
           secIo.appendChild(el('div', 'settings-label', '物流单号 · 备注人名名单（勾选的人会出现在「备注」列的选择栏里）'));
-          const grid = el('div', 'io-perm-grid io-names-grid');
+          const grid = el('div', 'io-names-grid');
           const sel = new Set(dat.ioNameList || usernames);
           usernames.forEach((u) => {
-            grid.appendChild(el('div', 'io-perm-name', u));
-            const cbw = el('div', 'io-perm-cb');
+            const item = el('label', 'io-name-chk');
             const cb = el('input');
             cb.type = 'checkbox';
             cb.checked = sel.has(u);
-            cbw.appendChild(cb);
-            grid.appendChild(cbw);
+            item.appendChild(cb);
+            const sp = el('span', '', u);
+            item.appendChild(sp);
+            grid.appendChild(item);
           });
           secIo.appendChild(grid);
           const bNames = el('button', 'primary', '保存人名名单');
           bNames.onclick = async () => {
-            const picked = Array.from(grid.querySelectorAll('input')).filter((c) => c.checked).length;
-            const names = [];
-            grid.querySelectorAll('.io-perm-name').forEach((n, i) => {
-              const cb = grid.querySelectorAll('input')[i];
-              if (cb.checked) names.push(n.textContent);
-            });
+            const names = Array.from(grid.querySelectorAll('.io-name-chk')).filter((it) => it.querySelector('input').checked).map((it) => it.querySelector('span').textContent);
             try {
               await api('POST', '/api/io-item', { action: 'set-names', names });
               if (ioData) ioData.ioNameList = names;
-              alert('已保存：' + picked + ' 人');
+              alert('已保存：' + names.length + ' 人');
             } catch (e) { alert(e.message); }
           };
           secIo.appendChild(bNames);
-          secIo.appendChild(el('div', 'modal-hint', '说明：名单只能从已注册的账号里勾选；后续「每人查看自己对应的单号行」也按这里勾选的名字匹配。'));
+          secIo.appendChild(el('div', 'modal-hint', '说明：名单只能从已注册的账号里勾选；「只看自己」的成员按行内备注=自己的用户名匹配可见行。'));
         }
       };
       renderIoPermSec(ioData);
@@ -2897,45 +2918,76 @@
           const fUser = mkField('发件邮箱', cfg.user, 'you@163.com');
           const fPass = mkField('SMTP 授权码', '', cfg.hasPass ? '已保存（留空=不修改）' : '邮箱设置里开启SMTP后生成的授权码', 'password');
           const fTo = mkField('收件邮箱（多个用逗号分隔）', cfg.to, 'a@163.com, b@163.com');
-          const fTime = mkField('每天发送时间', cfg.dailyTime, '20:00');
-          const btnRow = el('div', 'modal-actions');
-          const bSave = el('button', 'primary', '保存配置');
-          bSave.onclick = async () => {
+          // 每天发送时间：滑块选择（半小时一档：00:00–23:30），比手输直观
+          const timeRow = el('div', 'io-mail-row');
+          timeRow.appendChild(el('span', 'io-mail-label', '每天发送时间'));
+          const timeVal = el('span', 'io-mail-time-val', cfg.dailyTime || '20:00');
+          const toMin = (s) => { const m = String(s || '20:00').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 2 + (Number(m[2]) >= 30 ? 1 : 0) : 40; };
+          const fromMin = (v) => String(Math.floor(v / 2)).padStart(2, '0') + ':' + (v % 2 ? '30' : '00');
+          const slider = el('input', 'io-mail-slider');
+          slider.type = 'range';
+          slider.min = '0';
+          slider.max = '47';
+          slider.step = '1';
+          slider.value = String(toMin(cfg.dailyTime));
+          slider.oninput = () => { timeVal.textContent = fromMin(Number(slider.value)); };
+          timeRow.appendChild(slider);
+          timeRow.appendChild(timeVal);
+          secMail.appendChild(timeRow);
+          // 邮件主题/正文模板：{date}=年月日（主题必含）{time}=时分 {count}=附件数 {serials}=序列号列表
+          const fSubject = mkField('邮件主题（含 {date}）', cfg.subject || '[报价系统] 出入库备份 {date}', '[报价系统] 出入库备份 {date}');
+          const bodyRow = el('div', 'io-mail-row');
+          bodyRow.appendChild(el('span', 'io-mail-label', '邮件正文'));
+          const fBody = document.createElement('textarea');
+          fBody.className = 'edit-input io-mail-body';
+          fBody.rows = 4;
+          fBody.value = cfg.body || '出入库整本 Excel 自动备份（原格式，居中排版）。\n生成时间：{date} {time}\n序列号：{serials}\n附件共 {count} 个。';
+          bodyRow.appendChild(fBody);
+          secMail.appendChild(bodyRow);
+          secMail.appendChild(el('div', 'modal-hint', '主题/正文可用占位符：{date}=年月日、{time}=时分、{count}=附件个数、{serials}=序列号列表。主题里若漏写 {date}，保存时会自动补到末尾（备份邮件必须能看出是哪天的）。'));
+          const mkMailBtn = (text, primary, onclick) => {
+            const b = el('button', (primary ? 'primary ' : '') + 'io-mail-btn', text);
+            b.onclick = onclick;
+            return b;
+          };
+          const collectCfg = () => ({
+            action: 'mail-set',
+            enabled: cbEn.checked,
+            host: fHost.value.trim(),
+            port: Number(fPort.value.trim()) || 465,
+            user: fUser.value.trim(),
+            pass: fPass.value,
+            to: fTo.value.trim(),
+            dailyTime: fromMin(Number(slider.value)),
+            subject: fSubject.value.trim(),
+            body: fBody.value,
+          });
+          const bSave = mkMailBtn('💾 保存配置', true, async () => {
             try {
-              await api('POST', '/api/io-item', {
-                action: 'mail-set',
-                enabled: cbEn.checked,
-                host: fHost.value.trim(),
-                port: Number(fPort.value.trim()) || 465,
-                user: fUser.value.trim(),
-                pass: fPass.value,
-                to: fTo.value.trim(),
-                dailyTime: fTime.value.trim(),
-              });
+              await api('POST', '/api/io-item', collectCfg());
               alert('已保存');
             } catch (e) { alert(e.message); }
-          };
-          const bTest = el('button', '', '发送测试邮件');
-          bTest.onclick = async () => {
+          });
+          const bTest = mkMailBtn('✉️ 发送测试邮件', false, async () => {
             bTest.disabled = true;
             try {
-              await api('POST', '/api/io-item', { action: 'mail-set', enabled: cbEn.checked, host: fHost.value.trim(), port: Number(fPort.value.trim()) || 465, user: fUser.value.trim(), pass: fPass.value, to: fTo.value.trim(), dailyTime: fTime.value.trim() });
+              await api('POST', '/api/io-item', collectCfg());
               const r = await api('POST', '/api/io-item', { action: 'mail-send', mode: 'test' });
               alert(r.message || '测试邮件已发送');
             } catch (e) { alert(e.message); }
             bTest.disabled = false;
-          };
-          const bNow = el('button', '', '立即备份全部');
-          bNow.onclick = async () => {
+          });
+          const bNow = mkMailBtn('📤 立即备份全部', false, async () => {
             bNow.disabled = true;
             statusNow.textContent = '生成并发送中…（大工作簿约需十几秒）';
             try {
-              await api('POST', '/api/io-item', { action: 'mail-set', enabled: cbEn.checked, host: fHost.value.trim(), port: Number(fPort.value.trim()) || 465, user: fUser.value.trim(), pass: fPass.value, to: fTo.value.trim(), dailyTime: fTime.value.trim() });
+              await api('POST', '/api/io-item', collectCfg());
               const r = await api('POST', '/api/io-item', { action: 'mail-send' });
               statusNow.textContent = '✅ ' + (r.message || '已发送');
             } catch (e) { statusNow.textContent = '❌ ' + e.message; }
             bNow.disabled = false;
-          };
+          });
+          const btnRow = el('div', 'modal-actions io-mail-actions');
           btnRow.appendChild(bSave);
           btnRow.appendChild(bTest);
           btnRow.appendChild(bNow);
@@ -3277,11 +3329,10 @@
     const d = noStockData || { items: [], canEdit: false };
     const rows = (d.items || []).map((r) => ({ ...r }));
     const editing = d.canEdit && noStockBatch;
-    const tbl = el('table', 'stock-table nostock-table');
+    const tbl = el('table', 'stock-table nostock-table' + (editing ? ' ns-edit-table' : ''));
     const trh = el('tr');
-    if (editing) trh.appendChild(el('th', 'col-drag', '拖'));
+    // 编辑模式也保持 5 列原格结构：拖动把手/删除按钮悬浮在行两侧（不占列、不挤压原格子）
     ['名称', '市场价1', '市场价2', '市场价3', '定价'].forEach((h) => trh.appendChild(el('th', '', h)));
-    if (editing) trh.appendChild(el('th', '', '删'));
     const thead = el('thead');
     thead.appendChild(trh);
     tbl.appendChild(thead);
@@ -3305,13 +3356,13 @@
       bar.appendChild(bSave);
       bar.appendChild(bCancel);
       body.appendChild(bar);
-      body.appendChild(el('div', 'modal-hint', '批量修改：拖 ⠿ 滑块可调整行顺序；直接改 / 增 / 删行，最后点「保存全部」一次性生效；所有列均可留空。'));
+      body.appendChild(el('div', 'modal-hint', '批量修改：直接在原来的格子里改；⠿ 把手（行左端）按住拖动调顺序，🗑（行右端）删除行；最后点「保存全部」一次性生效；所有列均可留空。'));
       const persist = () => { noStockData = { ...d, items: rows }; }; // 增/删行重渲染前先写回，否则改动丢失
       let dragTr = null; // 拖动排序（与设置/收藏夹同款原生拖拽：按住 ⠿ 才整行可拖，dragover 实时让位；数据只挪顺序，保存统一在「保存全部」）
       rows.forEach((r) => {
-        const tr = el('tr');
+        const tr = el('tr', 'ns-edit-row'); // 行相对定位：把手/删除按钮悬浮在两侧
         tr._nsRow = r;
-        const tdDrag = el('td', 'col-drag');
+        const tdDrag = el('td', 'ns-side'); // 悬浮左端（不占列）
         const grip = el('span', 'drag-ns', '⠿');
         grip.title = '按住拖动调整顺序（保存全部后生效）';
         grip.addEventListener('mousedown', () => { tr.draggable = true; }); // 只有按住把手才允许拖整行，不影响输入框选字
@@ -3347,8 +3398,9 @@
           td.appendChild(inp);
           tr.appendChild(td);
         });
-        const tdDel = el('td');
-        const bDel = el('button', 'fav-del', '🗑');
+        const tdDel = el('td', 'ns-side-r'); // 悬浮右端（不占列）
+        const bDel = el('button', 'fav-del ns-del-btn', '🗑');
+        bDel.title = '删除该行（保存全部后生效）';
         bDel.onclick = () => { const i2 = rows.indexOf(r); if (i2 >= 0) rows.splice(i2, 1); persist(); renderNoStockBody(); };
         tdDel.appendChild(bDel);
         tr.appendChild(tdDel);
@@ -3356,7 +3408,7 @@
       });
       const trAdd = el('tr');
       const tdAdd = el('td');
-      tdAdd.colSpan = 7;
+      tdAdd.colSpan = 5;
       const bAdd = el('button', 'primary', '＋ 新增一行');
       bAdd.onclick = () => { rows.push({ name: '', mp1: '', mp2: '', mp3: '', price: '' }); persist(); renderNoStockBody(); };
       tdAdd.appendChild(bAdd);
@@ -3620,15 +3672,19 @@
     if (v == null) return '';
     if (v instanceof Date) {
       const p = (n) => String(n).padStart(2, '0');
-      const base = v.getFullYear() + '-' + p(v.getMonth() + 1) + '-' + p(v.getDate());
-      const hh = p(v.getHours()), mm = p(v.getMinutes()), ss = p(v.getSeconds());
-      return hh === '00' && mm === '00' && ss === '00' ? base : base + ' ' + hh + ':' + mm;
+      // 只要年月日：Excel 单元格即使是日期时间类型，入库也统一存为 YYYY-MM-DD（不带时分秒）
+      return v.getFullYear() + '-' + p(v.getMonth() + 1) + '-' + p(v.getDate());
     }
     if (typeof v === 'number') {
       if (!Number.isFinite(v)) return '';
       return String(Math.round(v * 1000000) / 1000000); // 规整浮点尾差（26.00000000001 → 26）
     }
     return String(v).trim();
+  }
+
+  // 显示层去时间：旧数据/文本日期里带 "HH:MM" 的统一只显示年月日（保存编辑时会写回截断后的值）
+  function ioTrimTime(str) {
+    return String(str == null ? '' : str).replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*$/, '').trim();
   }
 
   function u8ToB64(u8) {
@@ -3670,13 +3726,18 @@
     // 缓存命中只更新 ioWin 并返回，由外层自然渲染。
     const cached = ioRowCache[sheet.id];
     const metaTotal = Number(sheet.rowCount);
-    if (cached && Array.isArray(cached.rows) && cached.rows.length && Number.isFinite(metaTotal) && cached.total === metaTotal && cached.from + cached.rows.length === cached.total) {
+    // 「只看自己」视图：元数据 rowCount 是全量行数不可信 → 必须先问服务端拿过滤后的 total
+    const selfView = !!sheet.selfView;
+    if (!selfView && cached && Array.isArray(cached.rows) && cached.rows.length && Number.isFinite(metaTotal) && cached.total === metaTotal && cached.from + cached.rows.length === cached.total) {
       ioWin = { sheetId: sheet.id, from: cached.from, total: cached.total, rows: cached.rows, loading: false, capReached: ioWin.capReached, err: '' };
       return 'cache';
     }
     try {
       let total;
-      if (Number.isFinite(metaTotal)) total = metaTotal; // 元数据行数可信 → 少一次往返
+      if (selfView) {
+        const first = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: 0, to: 1 });
+        total = first.total; // 服务端按 备注=自己 过滤后的行数
+      } else if (Number.isFinite(metaTotal)) total = metaTotal; // 元数据行数可信 → 少一次往返
       else { const first = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: 0, to: 1 }); total = first.total; }
       const from = Math.max(0, total - 800);
       const res = await api('POST', '/api/io-rows', { sheetId: sheet.id, from, to: total });
@@ -3964,7 +4025,7 @@
       ioEdit.dirty.set(absIdx, base);
     };
     // 编辑单元格：日期列点开原生日历；物流单号的「备注」列点开人名名单；其余直接可输入
-    // afterEdit：空白行用——内容变更后的联动钩子（自动生成日期）
+    // afterEdit：空白行用——内容变更后的联动钩子（内容出现→自动生成日期；内容全清→自动清掉日期，行变回空行不会被提交）
     const editAttachCell = (td, h, ci, absIdx, rowVals, afterEdit) => {
       const hStr = String(h || '');
       const commit = () => {
@@ -3990,7 +4051,7 @@
       const absIdx = ioWin.from + ri;
       cols.forEach((h, ci) => {
         const td = el('td', (colCls(String(h))).trim());
-        td.textContent = (r.v || [])[ci] == null ? '' : (r.v || [])[ci];
+        td.textContent = /日期|时间/.test(String(h || '')) ? ioTrimTime((r.v || [])[ci]) : ((r.v || [])[ci] == null ? '' : (r.v || [])[ci]);
         if (editing) editAttachCell(td, h, ci, absIdx, null);
         tr.appendChild(td);
       });
@@ -3998,10 +4059,12 @@
     });
     // 编辑模式：底部空白行（初始 5 行；往下滚到底自动再补 10 行，可无限加；序号自动续号）
     // 编辑模式：底部空白行（初始 5 行；往下滚到底自动再补 10 行，可无限加；序号自动续号；
-    // 填入 PN/SN 等内容后「日期」自动生成为当天——格式与列内一致 YYYY-MM-DD，仍可点日历改）
+    // 填入 PN/SN 等内容后「日期」自动生成为当天——格式 YYYY-MM-DD，仍可点日历改；
+    // 把该行内容全部清空（含备注）则日期也自动清掉，行变回空行、不会被提交）
     const dateCi = cols.findIndex((h) => /日期|时间/.test(String(h)));
     const p2 = (n) => String(n).padStart(2, '0');
     const todayStr = new Date().getFullYear() + '-' + p2(new Date().getMonth() + 1) + '-' + p2(new Date().getDate());
+    const contentCis = cols.map((h, ci) => ({ h, ci })).filter((x) => !/序号|第.{0,4}个|日期|时间|合计|总数/.test(String(x.h || '')));
     const ioBuildBlankRow = (seqNo) => {
       const tr = el('tr', 'io-new-row');
       const rowVals = cols.map((h, ci) => (ci === seqIdx && seqNo != null ? String(seqNo) : ''));
@@ -4011,9 +4074,12 @@
         td.textContent = rowVals[ci];
         tds.push(td);
         editAttachCell(td, h, ci, -1, rowVals, () => {
-          // 联动：非序号/日期/合计列出现内容且日期还空着 → 自动生成当天日期
-          const hStr = String(h || '');
-          if (dateCi >= 0 && !/序号|第.{0,4}个|日期|时间|合计|总数/.test(hStr) && String(rowVals[ci] || '').trim() !== '' && !String(rowVals[dateCi] || '').trim()) {
+          // 联动：内容列有内容 → 日期自动生成当天；内容列全空 → 日期自动清除（含备注被删掉的情况）
+          if (dateCi < 0 || ci === dateCi) return;
+          const hasAny = contentCis.some((x) => String(rowVals[x.ci] || '').trim() !== '');
+          if (!hasAny) {
+            if (String(rowVals[dateCi] || '').trim() !== '') { rowVals[dateCi] = ''; tds[dateCi].textContent = ''; }
+          } else if (!String(rowVals[dateCi] || '').trim()) {
             rowVals[dateCi] = todayStr;
             tds[dateCi].textContent = todayStr;
           }
@@ -4037,7 +4103,7 @@
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
     box.appendChild(wrap);
-    const cnt = el('div', 'modal-hint', '共 ' + ioWin.total + ' 行，当前显示 ' + ioWin.rows.length + ' 行' + (ioWin.from > 0 ? '（上翻加载更早）' : '')
+    const cnt = el('div', 'modal-hint', '共 ' + ioWin.total + ' 行，当前显示 ' + ioWin.rows.length + ' 行' + (ioWin.from > 0 ? '（上翻加载更早）' : '') + (sheet.selfView ? '　🔒 只看自己：仅显示备注为你（' + me.username + '）的行' : '')
       + (ioWin.capReached && ioWin.from > 0 ? '；已达页面显示上限，更早的行请用「导出整本（原格式）」查看' : '')
       + (editing ? '；编辑模式：点单元格直接改，最下面空白行直接填写新行，点右上角「💾 保存」统一提交' : ''));
     box.appendChild(cnt);
@@ -4115,22 +4181,25 @@
     inp.onblur = () => { setTimeout(() => { if (inp.parentNode) inp.remove(); }, 200); };
   }
 
-  // 「备注」人名选择（物流单号分表编辑模式）：名单由 admin 在设置里从注册账号勾选
+  // 「备注」人名选择（物流单号分表编辑模式）：名单由 admin 在设置里从注册账号勾选；可清除（清空后行可整行删空）
   function ioPickName(td, names, onDone) {
     document.querySelectorAll('.io-name-pop').forEach((p) => p.remove());
     const pop = el('div', 'io-name-pop');
+    const pick = (name) => {
+      td.textContent = name;
+      pop.remove();
+      document.removeEventListener('click', close);
+      onDone();
+    };
+    const itClear = el('div', 'io-name-item io-name-clear', '🗑 清除');
+    itClear.onclick = (e) => { e.stopPropagation(); pick(''); };
+    pop.appendChild(itClear);
     (names || []).forEach((n) => {
       const it = el('div', 'io-name-item', n);
-      it.onclick = (e) => {
-        e.stopPropagation();
-        td.textContent = n;
-        pop.remove();
-        document.removeEventListener('click', close);
-        onDone();
-      };
+      it.onclick = (e) => { e.stopPropagation(); pick(n); };
       pop.appendChild(it);
     });
-    if (!(names || []).length) pop.appendChild(el('div', 'io-name-item', '（名单为空：设置 → 出入库权限管理 → 备注人名名单）'));
+    if (!(names || []).length) pop.appendChild(el('div', 'io-name-item', '（名单为空：设置 → 功能权限管理 → 出入库权限）'));
     td.style.position = 'relative';
     td.appendChild(pop);
     const close = (e) => {
@@ -4198,37 +4267,59 @@
 
   // 分表权限弹窗（admin）：可编辑名单 + 可见名单（点保存统一提交）
   function openIoPermModal(sheet) {
+    const isLogiSheet = /物流单号/.test(String(sheet.name || ''));
     openModal('分表权限 — ' + sheet.name);
     const body = $('#modal-body');
-    body.appendChild(el('div', 'modal-hint', '勾选「可编辑」的成员可以在该分表末尾追加记录；「可见」的成员能查看该分表（编辑者自动可见）。一个都不勾 = 仅 admin 可见可编辑。'));
+    body.appendChild(el('div', 'modal-hint', isLogiSheet
+      ? '物流单号分表三档权限（互斥）：「可编辑」= 改行/追加并看全部；「可见」= 看全部行；「只看自己」= 只能看到备注是自己名字的行（导入的他人行不可见）。一个都不勾 = 该成员完全不可见。'
+      : '勾选「可编辑」的成员可以修改/追加该分表；「可见」的成员能查看该分表（编辑者自动可见）。一个都不勾 = 仅 admin 可见可编辑。'));
     const names = ioData && ioData.usernames ? ioData.usernames.filter((u) => u !== me.username) : [];
     const edSel = new Set(sheet.editors || []);
     const vwSel = new Set(sheet.viewers || []);
+    const svSel = new Set(isLogiSheet ? (sheet.selfViewers || []) : []);
     const grid = el('div', 'io-perm-grid');
     grid.appendChild(el('div', 'io-perm-head', '成员'));
     grid.appendChild(el('div', 'io-perm-head', '可编辑'));
     grid.appendChild(el('div', 'io-perm-head', '可见'));
+    if (isLogiSheet) grid.appendChild(el('div', 'io-perm-head', '只看自己'));
     names.forEach((u) => {
       grid.appendChild(el('div', 'io-perm-name', u));
-      const tdE = el('div', 'io-perm-cb');
-      const cbE = el('input');
-      cbE.type = 'checkbox';
+      const mkCb = () => {
+        const d = el('div', 'io-perm-cb');
+        const c = el('input');
+        c.type = 'checkbox';
+        d.appendChild(c);
+        grid.appendChild(d);
+        return c;
+      };
+      const cbE = mkCb();
       cbE.checked = edSel.has(u);
-      tdE.appendChild(cbE);
-      grid.appendChild(tdE);
-      const tdV = el('div', 'io-perm-cb');
-      const cbV = el('input');
-      cbV.type = 'checkbox';
+      const cbV = mkCb();
       cbV.checked = vwSel.has(u);
-      tdV.appendChild(cbV);
-      grid.appendChild(tdV);
+      const cbS = isLogiSheet ? mkCb() : null;
+      if (cbS) cbS.checked = svSel.has(u);
       cbE.onchange = () => {
-        if (cbE.checked) { edSel.add(u); vwSel.add(u); cbV.checked = true; }
-        else edSel.delete(u);
+        if (cbE.checked) {
+          edSel.add(u); vwSel.add(u); svSel.delete(u);
+          cbV.checked = true;
+          if (cbS) cbS.checked = false;
+        } else edSel.delete(u);
       };
       cbV.onchange = () => {
-        if (cbV.checked) vwSel.add(u);
-        else { vwSel.delete(u); if (edSel.has(u)) { edSel.delete(u); cbE.checked = false; } }
+        if (cbV.checked) {
+          vwSel.add(u); svSel.delete(u);
+          if (cbS) cbS.checked = false;
+        } else {
+          vwSel.delete(u);
+          if (edSel.has(u)) { edSel.delete(u); cbE.checked = false; }
+        }
+      };
+      if (cbS) cbS.onchange = () => {
+        if (cbS.checked) {
+          svSel.add(u); vwSel.delete(u);
+          cbV.checked = false;
+          if (edSel.has(u)) { edSel.delete(u); cbE.checked = false; }
+        } else svSel.delete(u);
       };
     });
     body.appendChild(grid);
@@ -4236,9 +4327,12 @@
     const bSave = el('button', 'primary', '保存');
     bSave.onclick = async () => {
       try {
-        const r = await api('POST', '/api/io-item', { action: 'setperm', sheetId: sheet.id, editors: [...edSel], viewers: [...vwSel] });
+        const payload = { action: 'setperm', sheetId: sheet.id, editors: [...edSel], viewers: [...vwSel] };
+        if (isLogiSheet) payload.selfViewers = [...svSel];
+        const r = await api('POST', '/api/io-item', payload);
         sheet.editors = r.editors;
         sheet.viewers = r.viewers;
+        if (isLogiSheet) sheet.selfViewers = r.selfViewers || [];
         closeModal();
         renderIoPage();
       } catch (e) { alert(e.message); }

@@ -620,7 +620,10 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* 出入库页：表格区撑满页面剩余高度（不再 62vh 限高留白），提示行固定在下方 */
 #io-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 #io-content .io-table-wrap { flex: 1; min-height: 260px; max-height: none; }
-.io-table { min-width: 100%; }
+/* 悬浮表头缝隙修复：collapse 下 sticky 表头的下边框会脱节露字 → 改 separate 用 box-shadow 画线 */
+.io-table { min-width: 100%; border-collapse: separate; border-spacing: 0; }
+#io-content .io-table thead th { box-shadow: inset 0 -1px 0 #d5d9df; }
+.io-table th.io-col-date, .io-table td.io-col-date { min-width: 118px; white-space: nowrap; }
 /* 列宽：日期/时间列放得下完整日期；序号/SN 列收窄 */
 .io-table th.io-col-date, .io-table td.io-col-date { min-width: 118px; white-space: nowrap; }
 .io-table th.io-col-sn, .io-table td.io-col-sn { width: 64px; min-width: 48px; }
@@ -649,7 +652,25 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .io-mail-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .io-mail-label { width: 190px; flex: none; color: #4a5260; font-size: 13px; }
 .io-mail-row .edit-input { flex: 1; min-width: 0; }
-.io-names-grid { max-height: 220px; overflow: auto; border: 1px solid #e2e6ec; border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+.io-mail-body { resize: vertical; font-family: inherit; line-height: 1.5; }
+/* 发送时间滑块（半小时一档） */
+.io-mail-slider { flex: 1; min-width: 120px; height: 22px; accent-color: #2f6fab; cursor: pointer; }
+.io-mail-time-val { flex: none; min-width: 52px; text-align: center; font-weight: 700; color: #2f6fab; background: #eaf3fb; border-radius: 6px; padding: 2px 8px; font-size: 13px; }
+/* 邮件备份按钮行：统一美化（主次分明、等高、悬停反馈） */
+.io-mail-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.io-mail-btn { border-radius: 8px; padding: 8px 18px; font-size: 13.5px; font-weight: 600; border: 1px solid #c9d2de; background: #fff; color: #3c4657; cursor: pointer; transition: all .15s; }
+.io-mail-btn:hover { background: #f0f4fa; border-color: #9db3cd; }
+.io-mail-btn:active { transform: translateY(1px); }
+.io-mail-btn.primary { background: linear-gradient(135deg, #3272b8, #2a5f9e); border-color: #2a5f9e; color: #fff; box-shadow: 0 2px 6px rgba(47, 111, 171, .25); }
+.io-mail-btn.primary:hover { background: linear-gradient(135deg, #3a7dc8, #316aab); }
+.io-mail-btn:disabled { opacity: .55; cursor: not-allowed; }
+/* 出入库备注人名名单：整齐网格（每项=勾选框+名字一体，自动换行等宽对齐） */
+.io-names-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 220px; overflow: auto; border: 1px solid #e2e6ec; border-radius: 8px; padding: 8px; margin-bottom: 8px; background: #fafbfc; }
+.io-name-chk { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #fff; border: 1px solid #e2e6ec; border-radius: 6px; cursor: pointer; font-size: 13px; color: #3c4657; white-space: nowrap; overflow: hidden; }
+.io-name-chk:hover { border-color: #9db3cd; background: #f0f4fa; }
+.io-name-chk input { flex: none; }
+.io-name-chk span { overflow: hidden; text-overflow: ellipsis; }
+.io-name-item.io-name-clear { color: #c0392b; font-weight: 600; border-bottom: 1px dashed #e2c4c0; }
 .io-perm-grid { display: grid; grid-template-columns: 1fr 70px 70px; gap: 6px 8px; align-items: center; margin: 10px 0; max-height: 46vh; overflow: auto; }
 .io-perm-head { color: #666; font-size: 12.5px; font-weight: 600; text-align: center; }
 .io-perm-name { font-size: 13.5px; color: #20252d; }
@@ -764,6 +785,21 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .stock-table .col-seq { width: 34px; min-width: 34px; color: #8a93a6; font-size: 12px; text-align: center; }
 .stock-mod-red { color: #c0392b !important; font-weight: 600; }
 .stock-total-row td { background: #f4f6fb; font-weight: 700; }
+/* 库存合计行：悬浮在表头正下方不随滚动消失（表头行高 30px，合计行 sticky top 对齐） */
+#stock-content .price-content thead th { height: 30px; }
+#stock-content .price-content thead tr.stock-total-row td { position: sticky; top: 30px; z-index: 1; box-shadow: 0 1px 0 #dfe3e9; }
+/* 无库存产品统计·批量修改：保持 5 列原格结构，拖动把手/删除按钮悬浮在行两侧（向两侧拓宽，不挤压列宽） */
+.ns-edit-table { width: calc(100% - 56px) !important; margin: 0 auto; table-layout: fixed; }
+.ns-edit-row { position: relative; }
+.ns-edit-table td.ns-side { position: absolute; left: -30px; top: 50%; transform: translateY(-50%); width: 26px; padding: 0; border-bottom: none; text-align: center; }
+.ns-edit-table td.ns-side-r { position: absolute; right: -30px; top: 50%; transform: translateY(-50%); width: 26px; padding: 0; border-bottom: none; text-align: center; }
+.ns-edit-table .drag-ns { cursor: grab; color: #7c8698; font-size: 15px; user-select: none; }
+.ns-edit-table .drag-ns:active { cursor: grabbing; }
+@media (max-width: 768px) {
+  .ns-edit-table { width: calc(100% - 40px) !important; }
+  .ns-edit-table td.ns-side { left: -22px; width: 20px; }
+  .ns-edit-table td.ns-side-r { right: -22px; width: 20px; }
+}
 /* 价格页签：激活态悬停时保持蓝色不泛白 */
 .price-tab.active:hover { background: #4d6bfe; border-color: #4d6bfe; color: #fff; }
 /* 设置：侧栏拖拽排序 */
