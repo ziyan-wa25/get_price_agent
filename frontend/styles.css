@@ -617,6 +617,9 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* ---------- 出入库（序列号=Excel 工作簿；每个工作表=一个分表；时间正序，新行在末尾） ---------- */
 /* 分表标签复用 .price-tab（同业绩报表 月业绩/月到款 形式） */
 .io-table-wrap { overflow: auto; max-height: 62vh; border: 1px solid #d9dce1; border-radius: 8px; background: #fff; }
+/* 出入库页：表格区撑满页面剩余高度（不再 62vh 限高留白），提示行固定在下方 */
+#io-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#io-content .io-table-wrap { flex: 1; min-height: 260px; max-height: none; }
 .io-table { min-width: 100%; }
 /* 列宽：日期/时间列放得下完整日期；序号/SN 列收窄 */
 .io-table th.io-col-date, .io-table td.io-col-date { min-width: 118px; white-space: nowrap; }
