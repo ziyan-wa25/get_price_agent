@@ -618,10 +618,20 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* 分表标签复用 .price-tab（同业绩报表 月业绩/月到款 形式） */
 .io-table-wrap { overflow: auto; max-height: 62vh; border: 1px solid #d9dce1; border-radius: 8px; background: #fff; }
 .io-table { min-width: 100%; }
+/* 列宽：日期/时间列放得下完整日期；序号/SN 列收窄 */
+.io-table th.io-col-date, .io-table td.io-col-date { min-width: 118px; white-space: nowrap; }
+.io-table th.io-col-sn, .io-table td.io-col-sn { width: 64px; min-width: 48px; }
 .io-meta-th { color: #89909b; font-weight: 600; }
 .io-meta { color: #89909b; font-size: 12px; white-space: nowrap; }
 .io-append { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
 .io-append-input { width: 130px; }
+/* 右上角「开始修改」编辑模式 */
+.io-edit-btn { margin-left: auto; }
+.io-table td[contenteditable="true"] { cursor: text; background: #fffdf2; outline: none; }
+.io-table td[contenteditable="true"]:focus { background: #fffae0; box-shadow: inset 0 0 0 2px #f0b429; }
+.io-table tr.io-new-row td { background: #f6faff; color: #7c8698; }
+.io-table tr.io-new-row td[contenteditable="true"]:focus { background: #eef5ff; }
+.io-table tr.io-new-row td:empty::before { content: attr(data-ph); color: #b6bdc9; }
 .io-perm-grid { display: grid; grid-template-columns: 1fr 70px 70px; gap: 6px 8px; align-items: center; margin: 10px 0; max-height: 46vh; overflow: auto; }
 .io-perm-head { color: #666; font-size: 12.5px; font-weight: 600; text-align: center; }
 .io-perm-name { font-size: 13.5px; color: #20252d; }

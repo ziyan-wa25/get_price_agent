@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-92（修复：分片上传逐分表合并——之前整本覆盖导致只剩最后一个分表；上传弹窗去掉序列号输入框，序列号自动取文件名，同名文件再传=更新分表保留权限）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-93（出入库页面重构：去记录时间/记录人列；行窗口持久缓存秒开；日期列加宽SN收窄；右上角开始修改+空白行追加+统一保存；删序列号按钮移除）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3463,6 +3463,38 @@
   let ioBookId = '';
   let ioSheetId = '';
   let ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' }; // 当前分表的行窗口（懒加载）
+  let ioEdit = null; // 编辑模式：{ dirty: Map(绝对行号→values), newRows: [] }
+
+  // 行窗口持久缓存：已加载过的分表再次点开秒开，不再重新拉取（localStorage，超限淘汰最旧）
+  const IO_CACHE_KEY = 'io-row-cache-v2';
+  let ioRowCache = {};
+  try { ioRowCache = JSON.parse(localStorage.getItem(IO_CACHE_KEY) || '{}') || {}; } catch (e) { ioRowCache = {}; }
+  let ioCacheTimer = null;
+  function saveIoCache() {
+    clearTimeout(ioCacheTimer);
+    ioCacheTimer = setTimeout(() => {
+      try {
+        // 总量超限（约 3MB）→ 按保存时间从旧到新丢弃
+        let entries = Object.entries(ioRowCache).map(([k, v]) => [k, v.savedAt || 0]);
+        const keysNewToOld = entries.sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+        const keep = {};
+        for (const k of keysNewToOld) {
+          keep[k] = ioRowCache[k];
+          if (JSON.stringify(keep).length > 3 * 1024 * 1024) delete keep[k];
+        }
+        ioRowCache = keep;
+        localStorage.setItem(IO_CACHE_KEY, JSON.stringify(ioRowCache));
+      } catch (e) { /* 存不下就算了（隐私模式/超限），内存缓存仍在 */ }
+    }, 300);
+  }
+  function cacheIoWindow() {
+    if (!ioWin.sheetId || !ioWin.rows.length) return;
+    ioRowCache[ioWin.sheetId] = { from: ioWin.from, total: ioWin.total, rows: ioWin.rows, savedAt: Date.now() };
+    saveIoCache();
+  }
+  function dropIoCache(sheetId) {
+    if (sheetId && ioRowCache[sheetId]) { delete ioRowCache[sheetId]; saveIoCache(); }
+  }
 
   function ioCellStr(v) {
     if (v == null) return '';
@@ -3512,16 +3544,25 @@
   }
 
   async function loadIoRowsTail(sheet) {
-    // 首次加载当前分表：只取末尾 800 行（最新位置），上翻再补更早的
+    // 首次加载当前分表：优先用持久缓存秒开（缓存窗口的末尾=最新行数才有效），否则取末尾 800 行
+    const cached = ioRowCache[sheet.id];
+    const metaTotal = Number(sheet.rowCount);
+    if (cached && Array.isArray(cached.rows) && cached.rows.length && Number.isFinite(metaTotal) && cached.total === metaTotal && cached.from + cached.rows.length === cached.total) {
+      ioWin = { sheetId: sheet.id, from: cached.from, total: cached.total, rows: cached.rows, loading: false, capReached: ioWin.capReached, err: '' };
+      renderIoPage();
+      return;
+    }
     try {
-      const first = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: 0, to: 1 });
-      const total = first.total;
+      let total;
+      if (Number.isFinite(metaTotal)) total = metaTotal; // 元数据行数可信 → 少一次往返
+      else { const first = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: 0, to: 1 }); total = first.total; }
       const from = Math.max(0, total - 800);
       const res = await api('POST', '/api/io-rows', { sheetId: sheet.id, from, to: total });
       ioWin = { sheetId: sheet.id, from, total, rows: res.rows, loading: false, capReached: false, err: '' };
     } catch (e) {
       ioWin = { sheetId: sheet.id, from: 0, total: 0, rows: [], loading: false, capReached: true, err: e.message };
     }
+    cacheIoWindow();
     renderIoPage();
   }
 
@@ -3686,12 +3727,21 @@
     const sheet = book ? ((book.sheets || []).find((s) => s.id === ioSheetId) || (book.sheets || [])[0] || null) : null;
     ioSheetId = sheet ? sheet.id : '';
 
-    // 工具栏（同业绩报表 月业绩/月到款 形式）：分表标签在工具栏一行内 + 序列号选择 + 上传/删除（admin）+ 导出
+    // 工具栏（同业绩报表 月业绩/月到款 形式）：分表标签在工具栏一行内 + 序列号选择 + 上传（admin）+ 导出
+    const editing = ioEdit && ioEdit.sheetId === sheet.id;
+    const confirmLeaveEdit = () => {
+      if (!ioEdit) return true;
+      const has = (ioEdit.dirty && ioEdit.dirty.size) || (ioEdit.newRows && ioEdit.newRows.some((r) => r.some((c) => String(c || '').trim() !== '')));
+      if (!has) { ioEdit = null; return true; }
+      if (confirm('有未保存的修改，确定放弃并切换？')) { ioEdit = null; return true; }
+      return false;
+    };
     const bar = el('div', 'stock-toolbar');
     if (book) {
       (book.sheets || []).forEach((s) => {
         const t = el('button', 'price-tab' + (s.id === ioSheetId ? ' active' : ''), s.name);
         t.onclick = () => {
+          if (s.id !== ioSheetId && !confirmLeaveEdit()) return;
           ioSheetId = s.id;
           ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
           renderIoPage();
@@ -3708,6 +3758,7 @@
         sel.appendChild(op);
       });
       sel.onchange = () => {
+        if (!confirmLeaveEdit()) { sel.value = ioBookId; return; }
         ioBookId = sel.value;
         ioSheetId = '';
         ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
@@ -3719,25 +3770,26 @@
       const bUp = el('button', 'primary', '📤 上传序列号表');
       bUp.onclick = () => openIoUploadModal();
       bar.appendChild(bUp);
-      if (book) {
-        const bDelBook = el('button', 'danger', '🗑 删序列号');
-        bDelBook.onclick = async () => {
-          if (!confirm('确定删除序列号「' + book.serial + '」及其全部分表吗？（不可恢复）')) return;
-          try {
-            await api('POST', '/api/io-item', { action: 'delete-book', bookId: book.id });
-            ioBookId = '';
-            ioSheetId = '';
-            ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
-            refreshIo();
-          } catch (e) { alert(e.message); }
-        };
-        bar.appendChild(bDelBook);
-      }
     }
     if (book) {
       const bExp = el('button', '', '⬇️ 导出整本（原格式）');
       bExp.onclick = () => exportIoBook(book);
       bar.appendChild(bExp);
+    }
+    // 右上角「开始修改」：进入编辑模式 → 直接点单元格改、表格下方空白行直接填新行 → 保存统一提交
+    if (book && sheet && sheet.canEdit) {
+      if (!ioEdit || ioEdit.sheetId !== sheet.id) {
+        const bEdit = el('button', 'io-edit-btn', '✏️ 开始修改');
+        bEdit.onclick = () => { ioEdit = { sheetId: sheet.id, dirty: new Map(), newRows: [] }; renderIoPage(); };
+        bar.appendChild(bEdit);
+      } else {
+        const bSave = el('button', 'primary io-edit-btn', '💾 保存');
+        bSave.onclick = () => saveIoEdits(sheet);
+        const bCancel = el('button', '', '✖ 取消');
+        bCancel.onclick = () => { ioEdit = null; renderIoPage(); };
+        bar.appendChild(bSave);
+        bar.appendChild(bCancel);
+      }
     }
     box.appendChild(bar);
 
@@ -3761,6 +3813,7 @@
         if (!confirm('确定删除分表「' + sheet.name + '」吗？（不可恢复）')) return;
         try {
           await api('POST', '/api/io-item', { action: 'delete-sheet', sheetId: sheet.id });
+          dropIoCache(sheet.id);
           ioSheetId = '';
           ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
           refreshIo();
@@ -3778,7 +3831,9 @@
     }
     const windowReady = ioWin.sheetId === sheet.id;
 
-    // 数据表：列 = 上传文件表头 + 记录时间/记录人（系统列，页面展示用；导出文件不含）
+    // 数据表：列 = 上传文件表头（与导出文件一致，无系统附加列）
+    // 列宽：日期/时间列加宽到能放下完整日期，序号/SN 列收窄
+    const colCls = (h) => (/日期|时间/.test(h) ? ' io-col-date' : (/序号|编号|(^|[^A-Za-z])SN/i.test(h) ? ' io-col-sn' : ''));
     const wrap = el('div', 'io-table-wrap');
     if (!windowReady) {
       wrap.appendChild(el('div', 'modal-hint', ioWin.err ? ('加载失败：' + ioWin.err) : '加载行数据中…'));
@@ -3787,34 +3842,67 @@
     }
     const tbl = el('table', 'stock-table io-table');
     const trh = el('tr');
-    (sheet.columns || []).forEach((h) => trh.appendChild(el('th', '', h)));
-    trh.appendChild(el('th', 'io-meta-th', '记录时间'));
-    trh.appendChild(el('th', 'io-meta-th', '记录人'));
+    const cols = sheet.columns || [];
+    cols.forEach((h) => trh.appendChild(el('th', (colCls(String(h))).trim(), h)));
     const thead = el('thead');
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
-    ioWin.rows.forEach((r) => {
+    const editMarkDirty = (absIdx, ci, text) => {
+      if (!ioEdit) return;
+      const cur = ioEdit.dirty.get(absIdx);
+      const base = cur || (ioWin.rows[absIdx - ioWin.from] ? ioWin.rows[absIdx - ioWin.from].v.slice() : []);
+      base[ci] = text;
+      ioEdit.dirty.set(absIdx, base);
+    };
+    ioWin.rows.forEach((r, ri) => {
       const tr = el('tr');
-      (r.v || []).forEach((c) => { const td = el('td'); td.textContent = c; tr.appendChild(td); });
-      const tdA = el('td', 'io-meta');
-      tdA.textContent = r.at ? new Date(r.at).toLocaleString('zh-CN') : '（导入）';
-      tr.appendChild(tdA);
-      const tdB = el('td', 'io-meta');
-      tdB.textContent = r.at ? (r.by || '') : '（导入）';
-      tr.appendChild(tdB);
+      const absIdx = ioWin.from + ri;
+      cols.forEach((h, ci) => {
+        const td = el('td', (colCls(String(h))).trim());
+        td.textContent = (r.v || [])[ci] == null ? '' : (r.v || [])[ci];
+        if (editing) {
+          td.contentEditable = 'true';
+          td.spellcheck = false;
+          td.oninput = () => editMarkDirty(absIdx, ci, td.textContent.trim());
+        }
+        tr.appendChild(td);
+      });
       tbody.appendChild(tr);
     });
+    // 编辑模式：表格底部预留 5 行空白行，直接往下填即可追加（序号列自动续号，可改）
+    if (editing) {
+      const last = ioWin.rows.length ? ioWin.rows[ioWin.rows.length - 1] : { v: [] };
+      const seqIdx = cols.findIndex((h) => /序号|第.{0,4}个/.test(String(h)));
+      const lastSeq = seqIdx >= 0 ? String((last.v || [])[seqIdx] == null ? '' : (last.v || [])[seqIdx]).trim() : '';
+      const nextSeqNo = /^\d+$/.test(lastSeq) ? Number(lastSeq) + 1 : null;
+      for (let n = 0; n < 5; n++) {
+        const tr = el('tr', 'io-new-row');
+        const rowVals = cols.map((h, ci) => (ci === seqIdx && nextSeqNo != null ? String(nextSeqNo + n) : ''));
+        cols.forEach((h, ci) => {
+          const td = el('td', (colCls(String(h))).trim());
+          td.textContent = rowVals[ci];
+          td.contentEditable = 'true';
+          td.spellcheck = false;
+          td.oninput = () => { rowVals[ci] = td.textContent.trim(); };
+          tr.appendChild(td);
+        });
+        tr._ioNewVals = rowVals;
+        tbody.appendChild(tr);
+      }
+    }
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
     box.appendChild(wrap);
     const cnt = el('div', 'modal-hint', '共 ' + ioWin.total + ' 行，当前显示 ' + ioWin.rows.length + ' 行' + (ioWin.from > 0 ? '（上翻加载更早）' : '')
-      + (ioWin.capReached && ioWin.from > 0 ? '；已达页面显示上限，更早的行请用「导出整本（原格式）」查看' : ''));
+      + (ioWin.capReached && ioWin.from > 0 ? '；已达页面显示上限，更早的行请用「导出整本（原格式）」查看' : '')
+      + (editing ? '；编辑模式：点单元格直接改，最下面空白行直接填写新行，点右上角「💾 保存」统一提交' : ''));
     box.appendChild(cnt);
-    wrap.scrollTop = wrap.scrollHeight; // 默认定位到最下方（最新位置）
+    if (!editing) wrap.scrollTop = wrap.scrollHeight; // 默认定位到最下方（最新位置）；编辑模式保持原位避免跳动
 
     // 上翻到顶：向云端再取更早的 1000 行（前插，保持视口位置）
     wrap.onscroll = async () => {
+      if (editing) return; // 编辑模式暂停懒加载，避免重渲染打断输入
       if (wrap.scrollTop > 80 || ioWin.loading || ioWin.capReached || ioWin.from <= 0 || ioWin.sheetId !== sheet.id) return;
       ioWin.loading = true;
       const want = Math.min(1000, ioWin.from);
@@ -3825,59 +3913,58 @@
         ioWin.rows = res.rows.concat(ioWin.rows);
         ioWin.from -= want;
         if (ioWin.rows.length >= 20000) ioWin.capReached = true;
+        cacheIoWindow();
         renderIoPage();
         const nw = $('#io-content .io-table-wrap');
         if (nw) nw.scrollTop = nw.scrollHeight - prevH + prevTop; // 保持视口位置
       } catch (e) { /* 上翻失败静默，可继续翻 */ }
       ioWin.loading = false;
     };
+  }
 
-    // 追加行表单（可编辑者）：每列一个输入框；扫码枪在输入框内扫入即填，回车提交
-    if (sheet.canEdit) {
-      const rowsAll = ioWin.rows;
-      const last = rowsAll.length ? rowsAll[rowsAll.length - 1] : { v: [] };
-      const form = el('div', 'io-append');
-      const inputs = [];
-      (sheet.columns || []).forEach((h, ci) => {
-        const inp = el('input', 'edit-input io-append-input');
-        inp.placeholder = h;
-        const lastVal = String((last.v || [])[ci] == null ? '' : (last.v || [])[ci]).trim();
-        if (/序号|第.{0,4}个/.test(h) && /^\d+$/.test(lastVal)) inp.value = String(Number(lastVal) + 1); // 序号列自动 +1
-        else if (/合计|总数/.test(h) && lastVal) inp.value = lastVal; // 合计列沿用上一行（同一批）
-        inputs.push(inp);
-        form.appendChild(inp);
-      });
-      const bAdd = el('button', 'todo-add-btn', '＋ 添加');
-      const submit = async () => {
-        const values = inputs.map((i) => i.value);
-        if (!values.some((v) => String(v).trim() !== '')) { if (inputs[0]) inputs[0].focus(); return; }
-        try {
-          const r = await api('POST', '/api/io-item', { action: 'append', sheetId: sheet.id, values });
-          ioWin.rows.push(r.row); // 乐观追加：先上屏再后台刷新
-          if (Number.isFinite(r.total)) ioWin.total = r.total;
-          (ioData.books || []).forEach((b) => {
-            const s = (b.sheets || []).find((x) => x.id === sheet.id);
-            if (s) s.rowCount = r.total;
-          });
-          inputs.forEach((i) => {
-            const idx = inputs.indexOf(i);
-            const h = (sheet.columns || [])[idx] || '';
-            const cur = String(i.value).trim();
-            if (/序号|第.{0,4}个/.test(h) && /^\d+$/.test(cur)) i.value = String(Number(cur) + 1);
-            else if (!/合计|总数/.test(h)) i.value = '';
-          });
-          renderIoPage();
-        } catch (e) { alert(e.message); }
-      };
-      bAdd.onclick = submit;
-      inputs.forEach((i, idx) => {
-        i.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-        if (idx === 0 && !i.value) setTimeout(() => i.focus(), 0);
-      });
-      form.appendChild(bAdd);
-      box.appendChild(form);
-      box.appendChild(el('div', 'modal-hint', '追加的行显示在表格最下方；表头含「序号」的列自动 +1、含「合计」的列沿用上一行（同一批），均可手动改。'));
-    }
+  // 编辑模式保存：已有行的修改 → update-rows（一次批量）；底部空白行 → append-rows（一次批量）
+  async function saveIoEdits(sheet) {
+    if (!ioEdit || ioEdit.sheetId !== sheet.id) return;
+    const updates = Array.from(ioEdit.dirty.entries()).map(([idx, values]) => ({ idx, values }));
+    const newRows = Array.from($('#io-content tbody').querySelectorAll('tr.io-new-row'))
+      .map((tr) => tr._ioNewVals || [])
+      .filter((vals) => vals.some((c, ci) => {
+        const h = (sheet.columns || [])[ci] || '';
+        if (/序号|第.{0,4}个/.test(h)) {
+          // 序号列：只有当内容与自动续号预填不同时才算有内容（纯空白行不会误提交）
+          return false;
+        }
+        return String(c || '').trim() !== '';
+      }));
+    if (!updates.length && !newRows.length) { ioEdit = null; renderIoPage(); return; }
+    try {
+      if (updates.length) {
+        const r = await api('POST', '/api/io-item', { action: 'update-rows', sheetId: sheet.id, updates });
+        // 本地同步已改行（记录时间/记录人不再展示，无需更新 meta）
+        ioEdit.dirty.forEach((values, idx) => {
+          const ri = idx - ioWin.from;
+          if (ri >= 0 && ri < ioWin.rows.length) ioWin.rows[ri].v = values.slice();
+        });
+      }
+      if (newRows.length) {
+        const r2 = await api('POST', '/api/io-item', { action: 'append-rows', sheetId: sheet.id, rows: newRows });
+        if (Number.isFinite(r2.total)) ioWin.total = r2.total;
+        (ioData.books || []).forEach((b) => {
+          const s = (b.sheets || []).find((x) => x.id === sheet.id);
+          if (s) s.rowCount = r2.total;
+        });
+      }
+      // 已改行/新行落库后，从云端按当前窗口重取一次，保证与服务器一致
+      const tailN = Math.min(20000, Math.max(800, ioWin.rows.length + newRows.length));
+      const res = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: Math.max(0, ioWin.total - tailN), to: ioWin.total });
+      ioWin.rows = res.rows;
+      ioWin.from = Math.max(0, ioWin.total - res.rows.length);
+      ioEdit = null;
+      cacheIoWindow();
+      renderIoPage();
+      const nw = $('#io-content .io-table-wrap');
+      if (nw) nw.scrollTop = nw.scrollHeight;
+    } catch (e) { alert('保存失败：' + e.message); }
   }
 
   // 分表权限弹窗（admin）：可编辑名单 + 可见名单（点保存统一提交）
