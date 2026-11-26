@@ -27,10 +27,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Upload static files
-        uses: actions/upload-pages-artifact@v3
+      # 显式打包（upload-pages-artifact@v3 曾间歇性"上传成功但找不到 artifact"，
+      # 改为手工 tar + upload-artifact@v4：deploy-pages 期望名为 github-pages 的 artifact 内含 artifact.tar）
+      - name: Package frontend
+        run: tar -cf artifact.tar -C frontend .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          path: frontend
+          name: github-pages
+          path: artifact.tar
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Deploy to GitHub Pages
         id: deployment
