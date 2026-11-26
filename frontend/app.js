@@ -3964,27 +3964,26 @@
       ioEdit.dirty.set(absIdx, base);
     };
     // 编辑单元格：日期列点开原生日历；物流单号的「备注」列点开人名名单；其余直接可输入
-    const editAttachCell = (td, h, ci, absIdx, rowVals) => {
+    // afterEdit：空白行用——内容变更后的联动钩子（自动生成日期）
+    const editAttachCell = (td, h, ci, absIdx, rowVals, afterEdit) => {
       const hStr = String(h || '');
+      const commit = () => {
+        if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
+        if (afterEdit) afterEdit();
+      };
       if (/日期|时间/.test(hStr)) {
         td.classList.add('io-date-cell');
-        td.onclick = () => ioPickDate(td, () => {
-          if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
-        });
+        td.onclick = () => ioPickDate(td, commit);
         return;
       }
       if (/物流单号/.test(String(sheet.name || '')) && hStr === '备注') {
         td.classList.add('io-name-cell');
-        td.onclick = () => ioPickName(td, ioData.ioNameList || ioData.usernames || [], () => {
-          if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
-        });
+        td.onclick = () => ioPickName(td, ioData.ioNameList || ioData.usernames || [], commit);
         return;
       }
       td.contentEditable = 'true';
       td.spellcheck = false;
-      td.oninput = () => {
-        if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
-      };
+      td.oninput = commit;
     };
     ioWin.rows.forEach((r, ri) => {
       const tr = el('tr');
@@ -3998,13 +3997,27 @@
       tbody.appendChild(tr);
     });
     // 编辑模式：底部空白行（初始 5 行；往下滚到底自动再补 10 行，可无限加；序号自动续号）
+    // 编辑模式：底部空白行（初始 5 行；往下滚到底自动再补 10 行，可无限加；序号自动续号；
+    // 填入 PN/SN 等内容后「日期」自动生成为当天——格式与列内一致 YYYY-MM-DD，仍可点日历改）
+    const dateCi = cols.findIndex((h) => /日期|时间/.test(String(h)));
+    const p2 = (n) => String(n).padStart(2, '0');
+    const todayStr = new Date().getFullYear() + '-' + p2(new Date().getMonth() + 1) + '-' + p2(new Date().getDate());
     const ioBuildBlankRow = (seqNo) => {
       const tr = el('tr', 'io-new-row');
       const rowVals = cols.map((h, ci) => (ci === seqIdx && seqNo != null ? String(seqNo) : ''));
+      const tds = [];
       cols.forEach((h, ci) => {
         const td = el('td', (colCls(String(h))).trim());
         td.textContent = rowVals[ci];
-        editAttachCell(td, h, ci, -1, rowVals);
+        tds.push(td);
+        editAttachCell(td, h, ci, -1, rowVals, () => {
+          // 联动：非序号/日期/合计列出现内容且日期还空着 → 自动生成当天日期
+          const hStr = String(h || '');
+          if (dateCi >= 0 && !/序号|第.{0,4}个|日期|时间|合计|总数/.test(hStr) && String(rowVals[ci] || '').trim() !== '' && !String(rowVals[dateCi] || '').trim()) {
+            rowVals[dateCi] = todayStr;
+            tds[dateCi].textContent = todayStr;
+          }
+        });
         tr.appendChild(td);
       });
       tr._ioNewVals = rowVals;
@@ -4028,7 +4041,7 @@
       + (ioWin.capReached && ioWin.from > 0 ? '；已达页面显示上限，更早的行请用「导出整本（原格式）」查看' : '')
       + (editing ? '；编辑模式：点单元格直接改，最下面空白行直接填写新行，点右上角「💾 保存」统一提交' : ''));
     box.appendChild(cnt);
-    if (!editing) wrap.scrollTop = wrap.scrollHeight; // 默认定位到最下方（最新位置）；编辑模式保持原位避免跳动
+    wrap.scrollTop = wrap.scrollHeight; // 进入/保存/取消后视口都保持在最下端（最新位置），编辑模式不再跳到表格顶部
 
     // 编辑模式：滚到底自动补 10 行空白（可无限添加）；阅读模式：上翻加载更早的行
     wrap.onscroll = async () => {
