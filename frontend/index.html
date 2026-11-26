@@ -3,9 +3,8 @@
 
 <head>
   <meta charset="UTF-8">
-  <!-- v20260619-91 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>閼疆娴峰姙鍏郴缁?/title>
+  <title>鑫潮海办公系统</title>
   <meta name="theme-color" content="#4d6bfe">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="icon-192.png">
@@ -15,28 +14,28 @@
 
 <body>
 
-  <!-- 鐧诲綍 -->
+  <!-- 登录 -->
   <main id="login-view" class="login-wrap hidden">
     <section class="login-card" aria-labelledby="login-title">
       <header class="login-heading">
         <img class="login-mark" src="icon-192.png" alt="" width="51" height="51">
-        <h1 id="login-title">閼疆娴峰姙鍏郴缁?/h1>
-        <p>鐧诲綍宸ヤ綔鍙?/p>
+        <h1 id="login-title">鑫潮海办公系统</h1>
+        <p>登录工作台</p>
       </header>
       <form id="login-form" class="login-form" method="post" novalidate>
         <div class="login-field">
-          <label for="login-user">璐﹀彿</label>
+          <label for="login-user">账号</label>
           <div class="login-input">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
-            <input id="login-user" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="璇疯緭鍏ヨ处鍙? required>
+            <input id="login-user" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="请输入账号" required>
           </div>
         </div>
         <div class="login-field">
-          <label for="login-pass">瀵嗙爜</label>
+          <label for="login-pass">密码</label>
           <div class="login-input">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4M12 15v3"/></svg>
-            <input id="login-pass" type="password" autocomplete="current-password" placeholder="璇疯緭鍏ュ瘑鐮? required>
-            <button id="login-pass-toggle" class="login-pass-toggle" type="button" aria-label="鏄剧ず瀵嗙爜" title="鏄剧ず瀵嗙爜" aria-controls="login-pass">
+            <input id="login-pass" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+            <button id="login-pass-toggle" class="login-pass-toggle" type="button" aria-label="显示密码" title="显示密码" aria-controls="login-pass">
               <svg class="login-eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
               <svg class="login-eye-closed" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1c.5-.1.9-.1 1.4-.1 6.4 0 10 7 10 7a13.6 13.6 0 0 1-2.5 3.3M6.1 6.1A15 15 0 0 0 2 12s3.6 7 10 7c1.9 0 3.6-.6 5-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
             </button>
@@ -44,69 +43,69 @@
         </div>
         <p id="login-err" class="login-error" role="alert"></p>
         <button id="login-btn" class="login-submit" type="submit">
-          <span id="login-btn-label">鐧诲綍</span>
+          <span id="login-btn-label">登录</span>
           <svg class="login-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
         </button>
       </form>
     </section>
   </main>
 
-  <!-- 涓荤晫闈?-->
+  <!-- 主界面 -->
   <div id="app-view" class="app hidden">
     <aside class="sidebar">
-      <div class="side-title">馃洜锔?閼疆娴峰姙鍏郴缁?/div>
+      <div class="side-title">🛠️ 鑫潮海办公系统</div>
       <div class="side-duo">
-        <button id="new-chat" class="new-chat-btn">鏂板缓鎶ヤ环</button>
-        <button id="btn-prices" class="new-chat-btn side-btn price-entry">閰嶄欢浠锋牸琛?/button>
+        <button id="new-chat" class="new-chat-btn">新建报价</button>
+        <button id="btn-prices" class="new-chat-btn side-btn price-entry">配件价格表</button>
       </div>
-      <button id="btn-stock" class="side-btn">馃摝 搴撳瓨琛?/button>
-      <button id="btn-recv" class="side-btn">馃Ь 搴旀敹鏄庣粏</button>
-      <button id="btn-inv" class="side-btn">馃搳 鍙戠エ杩涢」缁熻</button>
-      <button id="btn-fav" class="side-btn">馃敄 缃戦〉鏀惰棌澶?/button>
-      <button id="btn-apps" class="side-btn">馃殌 搴旂敤鏀惰棌澶?/button>
-      <button id="btn-dispatch" class="side-btn">馃棑锔?澶栨淳棰勭害</button>
-      <button id="btn-perf" class="side-btn">馃搱 涓氱哗鎶ヨ〃</button>
-      <button id="btn-todo" class="side-btn">鉁?浠ｅ姙浜嬮」</button>
-      <button id="btn-pay" class="side-btn">馃挵 娆鹃」缁熻</button>
-      <button id="btn-io" class="side-btn">馃摜 鍑哄叆搴?/button>
-      <div class="side-label">鍘嗗彶鎶ヤ环</div>
+      <button id="btn-stock" class="side-btn">📦 库存表</button>
+      <button id="btn-recv" class="side-btn">🧾 应收明细</button>
+      <button id="btn-inv" class="side-btn">📊 发票进项统计</button>
+      <button id="btn-fav" class="side-btn">🔖 网页收藏夹</button>
+      <button id="btn-apps" class="side-btn">🚀 应用收藏夹</button>
+      <button id="btn-dispatch" class="side-btn">🗓️ 外派预约</button>
+      <button id="btn-perf" class="side-btn">📈 业绩报表</button>
+      <button id="btn-todo" class="side-btn">✅ 代办事项</button>
+      <button id="btn-pay" class="side-btn">💰 款项统计</button>
+      <button id="btn-io" class="side-btn">📥 出入库</button>
+      <div class="side-label">历史报价</div>
       <div id="history-list" class="history-list"></div>
       <div class="side-footer">
         <div id="whoami" class="whoami"></div>
-        <button id="btn-exit-imp" class="side-btn side-btn-warn hidden">馃毆 閫€鍑烘ā鎷燂紙杩斿洖 admin锛?/button>
-        <button id="btn-settings" class="side-btn">鈿欙笍 璁剧疆</button>
-        <button id="btn-change-pass" class="side-btn">淇敼瀵嗙爜</button>
-        <button id="btn-admin" class="side-btn hidden">璐﹀彿绠＄悊</button>
-        <button id="btn-logout" class="side-btn">閫€鍑虹櫥褰?/button>
+        <button id="btn-exit-imp" class="side-btn side-btn-warn hidden">🚪 退出模拟（返回 admin）</button>
+        <button id="btn-settings" class="side-btn">⚙️ 设置</button>
+        <button id="btn-change-pass" class="side-btn">修改密码</button>
+        <button id="btn-admin" class="side-btn hidden">账号管理</button>
+        <button id="btn-logout" class="side-btn">退出登录</button>
       </div>
     </aside>
 
     <main class="chat-main">
-      <!-- 瀵硅瘽椤?-->
+      <!-- 对话页 -->
       <div id="chat-page" class="chat-page">
         <div id="messages" class="messages"></div>
         <div class="input-bar">
-          <textarea id="input" rows="1" placeholder="杈撳叆闇€姹傦紝Enter 鍙戦€?/ Shift+Enter 鎹㈣&#10;"></textarea>
-          <button id="send">鍙戦€?/button>
+          <textarea id="input" rows="1" placeholder="输入需求，Enter 发送 / Shift+Enter 换行&#10;"></textarea>
+          <button id="send">发送</button>
         </div>
       </div>
-      <!-- 閰嶄欢浠锋牸琛ㄩ〉 -->
+      <!-- 配件价格表页 -->
       <div id="price-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="price-tabs" class="price-tabs"></div>
-          <input id="price-search" class="price-search" placeholder="鎼滅储锛氬瀷鍙?/ 瀹归噺 / 鎺ュ彛 绛夊叧閿瘝">
+          <input id="price-search" class="price-search" placeholder="搜索：型号 / 容量 / 接口 等关键词">
         </div>
         <div id="price-content" class="price-content"></div>
       </div>
-      <!-- 搴撳瓨琛ㄩ〉锛堜笌鎶ヤ环鏃犲叧锛?-->
+      <!-- 库存表页（与报价无关） -->
       <div id="stock-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="stock-info" class="stock-info"></div>
-          <input id="stock-search" class="price-search" placeholder="鎼滅储璐у搧鍚嶇О">
+          <input id="stock-search" class="price-search" placeholder="搜索货品名称">
         </div>
         <div id="stock-content" class="price-content"></div>
       </div>
-      <!-- 搴旀敹鏄庣粏椤碉紙姣忎汉鍙湅鑷繁缁忔墜鐨勬暟鎹級 -->
+      <!-- 应收明细页（每人只看自己经手的数据） -->
       <div id="recv-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="recv-info" class="stock-info"></div>
@@ -114,59 +113,59 @@
         </div>
         <div id="recv-content" class="price-content"></div>
       </div>
-      <!-- 鍙戠エ杩涢」缁熻椤碉紙admin/搴撳瓨涓婁紶鍛樺鍏ワ紝鎵€鏈夌櫥褰曠敤鎴峰彲瑙侊紝鏃犲鍑猴級 -->
+      <!-- 发票进项统计页（admin/库存上传员导入，所有登录用户可见，无导出） -->
       <div id="inv-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="inv-info" class="stock-info"></div>
-          <input id="inv-search" class="price-search" placeholder="鎼滅储璐х墿鍚嶇О/鍨嬪彿">
+          <input id="inv-search" class="price-search" placeholder="搜索货物名称/型号">
         </div>
         <div id="inv-content" class="price-content"></div>
       </div>
-      <!-- 缃戦〉鏀惰棌澶归〉锛坅dmin 鍙鐞嗭紝鎵€鏈変汉鍙鍙偣鍑伙級 -->
+      <!-- 网页收藏夹页（admin 可管理，所有人可见可点击） -->
       <div id="fav-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="fav-info" class="stock-info"></div>
         </div>
         <div id="fav-content" class="price-content"></div>
       </div>
-      <!-- 搴旂敤鏀惰棌澶归〉锛堟瘡浜虹淮鎶よ嚜宸辩殑鍒楄〃锛涙闈㈢増鐐瑰嚮鍚姩鏈満搴旂敤/璺抽粯璁ゆ祻瑙堝櫒锛?-->
+      <!-- 应用收藏夹页（每人维护自己的列表；桌面版点击启动本机应用/跳默认浏览器） -->
       <div id="apps-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="apps-info" class="stock-info"></div>
-          <input id="apps-search" class="price-search" placeholder="鎼滅储搴旂敤鍚嶇О">
+          <input id="apps-search" class="price-search" placeholder="搜索应用名称">
         </div>
         <div id="apps-content" class="price-content"></div>
       </div>
-      <!-- 澶栨淳棰勭害鐢宠椤碉紙姣忎汉鎻愪氦/鏀硅嚜宸辩殑锛涙壒鍑嗕粎 admin锛?-->
+      <!-- 外派预约申请页（每人提交/改自己的；批准仅 admin） -->
       <div id="dispatch-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="dispatch-info" class="stock-info"></div>
-          <input id="dispatch-search" class="price-search" placeholder="鎼滅储锛氬鎴?/ 鍦板潃 / 浜嬪疁 / 鐢宠浜?>
+          <input id="dispatch-search" class="price-search" placeholder="搜索：客户 / 地址 / 事宜 / 申请人">
         </div>
         <div id="dispatch-content" class="price-content"></div>
       </div>
-      <!-- 涓氱哗鎶ヨ〃椤碉紙admin 瀵煎叆缁忚惀鍒嗘瀽琛紱涓氬姟鍛樺彧鐪嬭嚜宸辫锛涙湀涓氱哗缁熻 / 鏈堝埌娆捐€冩牳涓ゆ爮锛?-->
+      <!-- 业绩报表页（admin 导入经营分析表；业务员只看自己行；月业绩统计 / 月到款考核两栏） -->
       <div id="perf-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="perf-info" class="stock-info"></div>
         </div>
         <div id="perf-content" class="price-content"></div>
       </div>
-      <!-- 浠ｅ姙浜嬮」椤碉紙姣忎汉涓汉鏁版嵁锛涘畬鎴愬悗杩涘巻鍙诧級 -->
+      <!-- 代办事项页（每人个人数据；完成后进历史） -->
       <div id="todo-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="todo-info" class="stock-info"></div>
         </div>
         <div id="todo-content" class="price-content"></div>
       </div>
-      <!-- 娆鹃」缁熻椤碉紙admin 缁存姢锛涢潪 admin 鍙湅缁忔墜浜烘槸鑷繁鐨勮锛?-->
+      <!-- 款项统计页（admin 维护；非 admin 只看经手人是自己的行） -->
       <div id="pay-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="pay-info" class="stock-info"></div>
         </div>
         <div id="pay-content" class="price-content"></div>
       </div>
-      <!-- 鍑哄叆搴撻〉锛堝簭鍒楀彿=涓婁紶鐨?Excel 宸ヤ綔绨匡紱姣忎釜宸ヤ綔琛?涓€涓垎琛紱鍙/鍙紪杈戞寜鍒嗚〃鍕惧悕鍗曪級 -->
+      <!-- 出入库页（序列号=上传的 Excel 工作簿；每个工作表=一个分表；可见/可编辑按分表勾名单） -->
       <div id="io-page" class="price-page hidden">
         <div class="price-toolbar">
           <div id="io-info" class="stock-info"></div>
@@ -175,22 +174,22 @@
       </div>
     </main>
 
-    <!-- 鎵嬫満搴曢儴瀵艰埅锛堚墹768px 鎵嶆樉绀猴紱鐐瑰嚮杞彂鍒颁晶鏍忓搴旀寜閽紝閫昏緫闆堕噸澶嶏級 -->
+    <!-- 手机底部导航（≤768px 才显示；点击转发到侧栏对应按钮，逻辑零重复） -->
     <div id="mobile-mask" class="mobile-mask hidden"></div>
     <nav id="mobile-nav" class="mobile-nav">
-      <button class="mnav-btn" data-target="new-chat">馃挰<span>鎶ヤ环</span></button>
-      <button class="mnav-btn" data-target="btn-stock">馃摝<span>搴撳瓨</span></button>
-      <button class="mnav-btn" data-target="btn-recv">馃Ь<span>搴旀敹</span></button>
-      <button class="mnav-btn" id="mnav-drawer">鈽?span>鏇村</span></button>
+      <button class="mnav-btn" data-target="new-chat">💬<span>报价</span></button>
+      <button class="mnav-btn" data-target="btn-stock">📦<span>库存</span></button>
+      <button class="mnav-btn" data-target="btn-recv">🧾<span>应收</span></button>
+      <button class="mnav-btn" id="mnav-drawer">☰<span>更多</span></button>
     </nav>
   </div>
 
-  <!-- 寮圭獥 -->
+  <!-- 弹窗 -->
   <div id="modal-mask" class="modal-mask hidden">
     <div class="modal-box" id="modal-box">
       <div class="modal-head">
         <span id="modal-title"></span>
-        <button id="modal-close">鉁?/button>
+        <button id="modal-close">✕</button>
       </div>
       <div id="modal-body" class="modal-body"></div>
     </div>
@@ -200,7 +199,7 @@
   <script src="xlsx.full.min.js?v=20261120-fix25"></script>
   <script src="app.js?v=20261120-fix25"></script>
   <script>
-    // PWA锛氭敞鍐?Service Worker锛堜粎 https 鎴?localhost 鐢熸晥锛涚敤 file:// 鏈湴鎵撳紑鏃惰嚜鍔ㄨ烦杩囷紝涓嶅奖鍝嶄换浣曠幇鏈夊姛鑳斤級
+    // PWA：注册 Service Worker（仅 https 或 localhost 生效；用 file:// 本地打开时自动跳过，不影响任何现有功能）
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
           window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js?v=20261120-fix25').catch(function () {}); });
     }
