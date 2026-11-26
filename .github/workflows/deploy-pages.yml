@@ -12,6 +12,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read # deploy-pages 需要查询本 run 的 artifact 元数据（缺它会出现 "No artifacts named github-pages"）
 
 concurrency:
   group: pages
