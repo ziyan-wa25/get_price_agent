@@ -792,9 +792,12 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 .stock-table .col-seq { width: 34px; min-width: 34px; color: #8a93a6; font-size: 12px; text-align: center; }
 .stock-mod-red { color: #c0392b !important; font-weight: 600; }
 .stock-total-row td { background: #f4f6fb; font-weight: 700; }
-/* 库存合计行：悬浮在表头正下方不随滚动消失（表头行高 30px + 底部 4px 遮挡条 → top 对齐 34px） */
-#stock-content .price-content thead th { height: 30px; }
-#stock-content .price-content thead tr.stock-total-row td { position: sticky; top: 34px; z-index: 1; box-shadow: 0 1px 0 #dfe3e9; }
+/* 库存合计条：位于搜索框正下方（页顶固定区，随表格滚动保持可见） */
+.stock-total-bar { display: flex; align-items: center; gap: 14px; margin-top: 6px; padding: 6px 12px; background: #eef3fa; border: 1px solid #d8dfe8; border-radius: 8px; font-size: 13.5px; font-weight: 700; color: #2c3445; }
+.stock-total-label { color: #2f6fab; }
+.stock-total-item { color: #20252d; }
+/* 库存页主界面工具栏悬浮（新增配件/批量修改等）：贴滚动区顶部 */
+.stock-toolbar.main-sticky { top: 0; background: rgba(255, 255, 255, .96); backdrop-filter: blur(4px); border-radius: 8px; padding: 6px 8px; }
 /* 无库存产品统计·批量修改：弹窗整体加宽约 100px，左右各多一窄常规列放滑块/删除；5 个数据列原宽原地编辑 */
 #modal-box.ns-batch-wide { width: min(1340px, 98vw); }
 .ns-edit-table td.ns-cell { cursor: text; outline: none; word-break: break-all; }

@@ -1280,6 +1280,8 @@
       bNs.onclick = openNoStockModal;
       bar.appendChild(bNs);
     }
+    // 普通浏览模式：工具栏（新增配件/批量修改等）也悬浮在滚动区顶部，下滑时保持可见
+    if (stockBatchMode === null && bar.children.length) bar.classList.add('sticky', 'main-sticky');
     if (bar.children.length) box.appendChild(bar);
 
     if (stockData.canImport && stockBatchMode === null && !$('#stock-file')) {
@@ -1368,30 +1370,42 @@
       tr.appendChild(td);
       tbody.appendChild(tr);
     }
-    // 库存合计行（仅 admin）：固定悬浮在表头之下不随滚动消失。
-    // 「合计」字样放货品名称列；库存量列=Σ库存量；成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价（负数/非数字行忽略）。
-    if (plainView && me && me.role === 'admin' && stockData.canSeeCost && stockData.canSeePrice && items.length) {
-      let costSum = 0;
-      let priceSum = 0;
-      let qtySum = 0;
-      items.forEach((it) => {
-        const q = Number(it.qty);
-        const c = Number(it.cost);
-        const p = Number(it.price);
-        if (Number.isFinite(q)) qtySum += q;
-        if (Number.isFinite(q) && Number.isFinite(c) && c >= 0) costSum += q * c;
-        if (Number.isFinite(q) && Number.isFinite(p) && p >= 0) priceSum += q * p;
-      });
-      const tr = el('tr', 'stock-total-row'); // 放入 thead 第二行：sticky 悬浮在表头正下方（滚动时一直可见）
-      if (plainView) tr.appendChild(el('td', 'col-seq'));
-      const tdName = el('td'); tdName.textContent = '合计'; tdName.dataset.label = '合计'; tr.appendChild(tdName);
-      const tdQty = el('td', 'num'); tdQty.textContent = fmtQty(Math.round(qtySum * 1000) / 1000); tdQty.dataset.label = '库存量合计'; tdQty.title = '库存量总和'; tr.appendChild(tdQty);
-      const tdC = el('td', 'num'); tdC.textContent = fmtCost(Math.round(costSum)); tdC.dataset.label = '成本合计'; tdC.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）'; tr.appendChild(tdC);
-      const tdP = el('td', 'num'); tdP.textContent = fmtSale(Math.round(priceSum)); tdP.dataset.label = '售价合计'; tdP.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）'; tr.appendChild(tdP);
-      const tdGap1 = el('td'); tdGap1.dataset.label = ''; tr.appendChild(tdGap1);
-      const tdGap2 = el('td'); tdGap2.dataset.label = ''; tr.appendChild(tdGap2);
-      const thead2 = tbl.querySelector('thead');
-      thead2.appendChild(tr); // thead 内第二行 + CSS sticky top=表头高度 → 滚动时固定悬浮
+    // 库存合计条（仅 admin）：放在搜索框正下方（页顶固定区，滚动表格时一直可见）。
+    // 「合计」字样在前；库存量=Σ库存量；成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价（负数/非数字行忽略）。
+    {
+      const ptb = document.querySelector('#stock-page .price-toolbar');
+      let totalBar = $('#stock-total-bar');
+      if (ptb && !totalBar) {
+        totalBar = el('div', 'stock-total-bar');
+        totalBar.id = 'stock-total-bar';
+        ptb.appendChild(totalBar);
+      }
+      const showTotal = plainView && me && me.role === 'admin' && stockData.canSeeCost && stockData.canSeePrice && items.length;
+      if (totalBar) {
+        totalBar.innerHTML = '';
+        totalBar.style.display = showTotal ? '' : 'none';
+      }
+      if (showTotal && totalBar) {
+        let costSum = 0;
+        let priceSum = 0;
+        let qtySum = 0;
+        items.forEach((it) => {
+          const q = Number(it.qty);
+          const c = Number(it.cost);
+          const p = Number(it.price);
+          if (Number.isFinite(q)) qtySum += q;
+          if (Number.isFinite(q) && Number.isFinite(c) && c >= 0) costSum += q * c;
+          if (Number.isFinite(q) && Number.isFinite(p) && p >= 0) priceSum += q * p;
+        });
+        totalBar.appendChild(el('span', 'stock-total-label', '合计'));
+        totalBar.appendChild(el('span', 'stock-total-item', '库存量 ' + fmtQty(Math.round(qtySum * 1000) / 1000)));
+        const cEl = el('span', 'stock-total-item', '成本 ' + fmtCost(Math.round(costSum)));
+        cEl.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）';
+        totalBar.appendChild(cEl);
+        const pEl = el('span', 'stock-total-item', '售价 ' + fmtSale(String(Math.round(priceSum))));
+        pEl.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）';
+        totalBar.appendChild(pEl);
+      }
     }
     tbl.appendChild(tbody);
     box.appendChild(tbl);
@@ -3019,7 +3033,7 @@
           secMail.appendChild(btnRow);
           const statusNow = el('div', 'modal-hint', '');
           secMail.appendChild(statusNow);
-          secMail.appendChild(el('div', 'modal-hint', '163/126 邮箱：登录网页版邮箱 → 设置 → POP3/SMTP/IMAP → 开启服务并生成「授权码」，把授权码填在上面（不是邮箱登录密码）。收件邮箱可填多个。'));
+          secMail.appendChild(el('div', 'modal-hint', '发送时间按北京时间计算（服务器时区差异已校正）。163/126 邮箱：登录网页版邮箱 → 设置 → POP3/SMTP/IMAP → 开启服务并生成「授权码」，把授权码填在上面（不是邮箱登录密码）。收件邮箱可填多个。'));
         } catch (e) {
           secMail.innerHTML = '';
           secMail.appendChild(el('div', 'modal-hint', '邮件备份配置加载失败：' + e.message + '（需先部署最新 scf-deploy.zip）'));
@@ -3438,7 +3452,7 @@
         // 原格直接编辑（同出入库编辑模式）：无输入框无蓝框，点进格子光标直接写
         ['name', 'mp1', 'mp2', 'mp3', 'price'].forEach((k) => {
           const td = el('td', 'ns-cell');
-          td.contentEditable = 'true';
+          td.setAttribute('contenteditable', 'true'); // attribute 方式：浏览器与 jsdom 均可靠
           td.spellcheck = false;
           td.textContent = r[k] || '';
           td.oninput = () => { r[k] = td.textContent.trim(); }; // 写行对象本身：拖动换位后依旧正确
@@ -4072,10 +4086,15 @@
     };
     // 编辑单元格：日期列点开原生日历；物流单号的「备注」列点开人名名单；其余直接可输入
     // afterEdit：空白行用——内容变更后的联动钩子（内容出现→自动生成日期；内容全清→自动清掉日期，行变回空行不会被提交）
+    // 取格值用 innerText（保留 Shift+Enter 格内换行）；jsdom 无 innerText 时回退 textContent
+    const ioCellText = (td) => {
+      const t = typeof td.innerText === 'string' ? td.innerText : td.textContent;
+      return String(t == null ? '' : t).replace(/\s+$/, '');
+    };
     const editAttachCell = (td, h, ci, absIdx, rowVals, afterEdit) => {
       const hStr = String(h || '');
       const commit = () => {
-        if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
+        if (rowVals) rowVals[ci] = ioCellText(td); else editMarkDirty(absIdx, ci, ioCellText(td));
         if (afterEdit) afterEdit();
       };
       if (/日期|时间/.test(hStr)) {
@@ -4088,7 +4107,7 @@
         td.onclick = () => ioPickName(td, ioData.ioNameList || ioData.usernames || [], commit);
         return;
       }
-      td.contentEditable = 'true';
+      td.setAttribute('contenteditable', 'true'); // attribute 方式：浏览器与 jsdom 均可靠
       td.spellcheck = false;
       td.oninput = commit;
     };
@@ -4145,6 +4164,32 @@
     }
     if (editing) {
       for (let n = 0; n < 5; n++) tbody.appendChild(ioBuildBlankRow(nextSeqNo != null ? nextSeqNo + n : null));
+      // 扫码枪录入：Enter = 跳到下一行同一列的格子继续录入；Shift+Enter 才是格内换行
+      const isEditCell = (x) => !!(x && x.hasAttribute && x.hasAttribute('contenteditable'));
+      tbody.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || e.shiftKey) return; // Shift+Enter 保留默认（格内换行）
+        const td = e.target;
+        if (!isEditCell(td)) return;
+        const tr = td.closest('tr');
+        if (!tr || !tbody.contains(tr)) return;
+        const ci = Array.prototype.indexOf.call(tr.children, td);
+        const next = tr.nextElementSibling;
+        const nt = next ? next.children[ci] : null;
+        if (nt && isEditCell(nt)) {
+          e.preventDefault();
+          nt.focus();
+          try { // 光标置于该格末尾（便于扫码枪连续录入）
+            const sel = w.getSelection();
+            const rng = document.createRange();
+            rng.selectNodeContents(nt);
+            rng.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(rng);
+          } catch (err) { /* jsdom/老浏览器忽略 */ }
+        } else {
+          e.preventDefault(); // 已到最后一行最后一格：拦截回车（避免格内产生换行）
+        }
+      });
     }
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
