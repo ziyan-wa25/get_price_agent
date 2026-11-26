@@ -2953,10 +2953,10 @@
           const fBody = document.createElement('textarea');
           fBody.className = 'edit-input io-mail-body';
           fBody.rows = 4;
-          fBody.value = cfg.body || '出入库整本 Excel 自动备份（原格式，居中排版）。\n生成时间：{date} {time}\n序列号：{serials}\n附件共 {count} 个。';
+          fBody.value = cfg.body || '出入库 Excel 已自动备份（原格式，居中排版）。\n备份时间：{date} {time}\n附件共 {count} 个。';
           bodyRow.appendChild(fBody);
           secMail.appendChild(bodyRow);
-          secMail.appendChild(el('div', 'modal-hint', '主题/正文可用占位符：{date}=年月日、{time}=时分、{count}=附件个数、{serials}=序列号列表。主题里若漏写 {date}，保存时会自动补到末尾（备份邮件必须能看出是哪天的）。'));
+          secMail.appendChild(el('div', 'modal-hint', '主题/正文可用占位符：{date}=年月日、{time}=时分、{count}=附件个数。主题里若漏写 {date}，保存时会自动补到末尾（备份邮件必须能看出是哪天的）。'));
           const mkMailBtn = (text, primary, onclick) => {
             const b = el('button', (primary ? 'primary ' : '') + 'io-mail-btn', text);
             b.onclick = onclick;
