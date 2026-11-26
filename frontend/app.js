@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-93（出入库页面重构：去记录时间/记录人列；行窗口持久缓存秒开；日期列加宽SN收窄；右上角开始修改+空白行追加+统一保存；删序列号按钮移除）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-94（修复重复渲染；导出走云端居中+列宽；保存乐观实时+失败回编辑；编辑模式无限下拉加行；日期原生日历点选；物流单号备注人名选择+设置名单；邮件备份每日定时+立即发送）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -2815,6 +2815,39 @@
             secIo.appendChild(row);
           });
         });
+        // 物流单号·备注人名名单（从注册账号中勾选；编辑模式点「备注」列即弹该名单）
+        const usernames = dat.usernames || [];
+        if (usernames.length) {
+          secIo.appendChild(el('div', 'settings-label', '物流单号 · 备注人名名单（勾选的人会出现在「备注」列的选择栏里）'));
+          const grid = el('div', 'io-perm-grid io-names-grid');
+          const sel = new Set(dat.ioNameList || usernames);
+          usernames.forEach((u) => {
+            grid.appendChild(el('div', 'io-perm-name', u));
+            const cbw = el('div', 'io-perm-cb');
+            const cb = el('input');
+            cb.type = 'checkbox';
+            cb.checked = sel.has(u);
+            cbw.appendChild(cb);
+            grid.appendChild(cbw);
+          });
+          secIo.appendChild(grid);
+          const bNames = el('button', 'primary', '保存人名名单');
+          bNames.onclick = async () => {
+            const picked = Array.from(grid.querySelectorAll('input')).filter((c) => c.checked).length;
+            const names = [];
+            grid.querySelectorAll('.io-perm-name').forEach((n, i) => {
+              const cb = grid.querySelectorAll('input')[i];
+              if (cb.checked) names.push(n.textContent);
+            });
+            try {
+              await api('POST', '/api/io-item', { action: 'set-names', names });
+              if (ioData) ioData.ioNameList = names;
+              alert('已保存：' + picked + ' 人');
+            } catch (e) { alert(e.message); }
+          };
+          secIo.appendChild(bNames);
+          secIo.appendChild(el('div', 'modal-hint', '说明：名单只能从已注册的账号里勾选；后续「每人查看自己对应的单号行」也按这里勾选的名字匹配。'));
+        }
       };
       renderIoPermSec(ioData);
       (async () => {
@@ -2827,6 +2860,92 @@
             secIo.innerHTML = '';
             secIo.appendChild(el('div', 'modal-hint', '出入库数据加载失败：' + e.message + '（若提示接口不存在，请先部署最新的 scf-deploy.zip）'));
           }
+        }
+      })();
+
+      // admin：邮件备份（每天定时把每个序列号的整本 Excel 发到配置邮箱；163/126 SMTP 授权码）
+      const mailTop = mkCollapse('邮件备份（每日自动发出入库 Excel）', false);
+      body.appendChild(mailTop.head);
+      body.appendChild(mailTop.sec);
+      const secMail = mailTop.sec;
+      (async () => {
+        let cfg = { enabled: false, host: 'smtp.163.com', port: 465, user: '', to: '', dailyTime: '20:00', hasPass: false };
+        try {
+          const r = await api('POST', '/api/io-item', { action: 'mail-get' });
+          cfg = Object.assign(cfg, r.cfg || {});
+          secMail.innerHTML = '';
+          const mkField = (label, val, ph, type) => {
+            const row = el('div', 'io-mail-row');
+            row.appendChild(el('span', 'io-mail-label', label));
+            const inp = el('input', 'edit-input');
+            inp.type = type || 'text';
+            inp.value = val;
+            inp.placeholder = ph || '';
+            row.appendChild(inp);
+            secMail.appendChild(row);
+            return inp;
+          };
+          const cbRow = el('div', 'io-mail-row');
+          const cbEn = el('input');
+          cbEn.type = 'checkbox';
+          cbEn.checked = !!cfg.enabled;
+          cbRow.appendChild(cbEn);
+          cbRow.appendChild(el('span', '', '每天自动备份（到点后由系统自动发出，无需电脑在线）'));
+          secMail.appendChild(cbRow);
+          const fHost = mkField('SMTP 服务器', cfg.host, 'smtp.163.com');
+          const fPort = mkField('端口', String(cfg.port), '465（SSL）');
+          const fUser = mkField('发件邮箱', cfg.user, 'you@163.com');
+          const fPass = mkField('SMTP 授权码', '', cfg.hasPass ? '已保存（留空=不修改）' : '邮箱设置里开启SMTP后生成的授权码', 'password');
+          const fTo = mkField('收件邮箱（多个用逗号分隔）', cfg.to, 'a@163.com, b@163.com');
+          const fTime = mkField('每天发送时间', cfg.dailyTime, '20:00');
+          const btnRow = el('div', 'modal-actions');
+          const bSave = el('button', 'primary', '保存配置');
+          bSave.onclick = async () => {
+            try {
+              await api('POST', '/api/io-item', {
+                action: 'mail-set',
+                enabled: cbEn.checked,
+                host: fHost.value.trim(),
+                port: Number(fPort.value.trim()) || 465,
+                user: fUser.value.trim(),
+                pass: fPass.value,
+                to: fTo.value.trim(),
+                dailyTime: fTime.value.trim(),
+              });
+              alert('已保存');
+            } catch (e) { alert(e.message); }
+          };
+          const bTest = el('button', '', '发送测试邮件');
+          bTest.onclick = async () => {
+            bTest.disabled = true;
+            try {
+              await api('POST', '/api/io-item', { action: 'mail-set', enabled: cbEn.checked, host: fHost.value.trim(), port: Number(fPort.value.trim()) || 465, user: fUser.value.trim(), pass: fPass.value, to: fTo.value.trim(), dailyTime: fTime.value.trim() });
+              const r = await api('POST', '/api/io-item', { action: 'mail-send', mode: 'test' });
+              alert(r.message || '测试邮件已发送');
+            } catch (e) { alert(e.message); }
+            bTest.disabled = false;
+          };
+          const bNow = el('button', '', '立即备份全部');
+          bNow.onclick = async () => {
+            bNow.disabled = true;
+            statusNow.textContent = '生成并发送中…（大工作簿约需十几秒）';
+            try {
+              await api('POST', '/api/io-item', { action: 'mail-set', enabled: cbEn.checked, host: fHost.value.trim(), port: Number(fPort.value.trim()) || 465, user: fUser.value.trim(), pass: fPass.value, to: fTo.value.trim(), dailyTime: fTime.value.trim() });
+              const r = await api('POST', '/api/io-item', { action: 'mail-send' });
+              statusNow.textContent = '✅ ' + (r.message || '已发送');
+            } catch (e) { statusNow.textContent = '❌ ' + e.message; }
+            bNow.disabled = false;
+          };
+          btnRow.appendChild(bSave);
+          btnRow.appendChild(bTest);
+          btnRow.appendChild(bNow);
+          secMail.appendChild(btnRow);
+          const statusNow = el('div', 'modal-hint', '');
+          secMail.appendChild(statusNow);
+          secMail.appendChild(el('div', 'modal-hint', '163/126 邮箱：登录网页版邮箱 → 设置 → POP3/SMTP/IMAP → 开启服务并生成「授权码」，把授权码填在上面（不是邮箱登录密码）。收件邮箱可填多个。'));
+        } catch (e) {
+          secMail.innerHTML = '';
+          secMail.appendChild(el('div', 'modal-hint', '邮件备份配置加载失败：' + e.message + '（需先部署最新 scf-deploy.zip）'));
         }
       })();
     }
@@ -3463,7 +3582,8 @@
   let ioBookId = '';
   let ioSheetId = '';
   let ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' }; // 当前分表的行窗口（懒加载）
-  let ioEdit = null; // 编辑模式：{ dirty: Map(绝对行号→values), newRows: [] }
+  let ioEdit = null; // 编辑模式：{ dirty: Map(绝对行号→values) }
+  let ioSaving = null; // 保存中标记：{ sheetId, pending }（乐观保存：界面已回阅读态，云端提交进行中）
 
   // 行窗口持久缓存：已加载过的分表再次点开秒开，不再重新拉取（localStorage，超限淘汰最旧）
   const IO_CACHE_KEY = 'io-row-cache-v2';
@@ -3545,12 +3665,14 @@
 
   async function loadIoRowsTail(sheet) {
     // 首次加载当前分表：优先用持久缓存秒开（缓存窗口的末尾=最新行数才有效），否则取末尾 800 行
+    // 注意：缓存命中时【不能】在这里调 renderIoPage——外层 renderIoPage 调用帧还在继续，
+    // 同步回调会让外层再渲染一遍，表格就会上下叠两份（v93 重复渲染 bug 根因）。
+    // 缓存命中只更新 ioWin 并返回，由外层自然渲染。
     const cached = ioRowCache[sheet.id];
     const metaTotal = Number(sheet.rowCount);
     if (cached && Array.isArray(cached.rows) && cached.rows.length && Number.isFinite(metaTotal) && cached.total === metaTotal && cached.from + cached.rows.length === cached.total) {
       ioWin = { sheetId: sheet.id, from: cached.from, total: cached.total, rows: cached.rows, loading: false, capReached: ioWin.capReached, err: '' };
-      renderIoPage();
-      return;
+      return 'cache';
     }
     try {
       let total;
@@ -3563,44 +3685,24 @@
       ioWin = { sheetId: sheet.id, from: 0, total: 0, rows: [], loading: false, capReached: true, err: e.message };
     }
     cacheIoWindow();
-    renderIoPage();
+    renderIoPage(); // 异步路径：此时外层调用帧早已结束，安全
   }
 
-  // 整本导出（原格式）：分页拉全所有可见分表的行 → SheetJS 生成与上传时结构相同的 xlsx
+  // 整本导出（原格式 + 居中排版 + 列宽自适应）：云端 exceljs 生成（结构仍与上传完全相同），前端只负责下载
   async function exportIoBook(book) {
     openModal('导出出入库（原格式）');
     const body = $('#modal-body');
-    const status = el('div', 'modal-hint', '准备导出…');
+    const status = el('div', 'modal-hint', '云端生成文件中…（大工作簿约需十几秒）');
     body.appendChild(status);
     try {
-      const XL = window.XLSX;
-      if (!XL) throw new Error('Excel 组件尚未加载完成，请稍后重试');
-      const wb = XL.utils.book_new();
-      for (const s of book.sheets || []) {
-        status.textContent = '拉取「' + s.name + '」…';
-        const first = await api('POST', '/api/io-rows', { sheetId: s.id, from: 0, to: 10000 });
-        const total = first.total;
-        const all = first.rows.map((r) => r.v || []);
-        let from = first.rows.length;
-        while (from < total) {
-          const res = await api('POST', '/api/io-rows', { sheetId: s.id, from, to: Math.min(total, from + 10000) });
-          res.rows.forEach((r) => all.push(r.v || []));
-          from += res.rows.length;
-          status.textContent = '拉取「' + s.name + '」' + from + ' / ' + total + ' 行…';
-        }
-        const aoa = [(s.columns || []).slice()].concat(all);
-        XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet(aoa), String(s.name).slice(0, 31) || ('分表' + (wb.SheetNames.length + 1)));
-      }
-      status.textContent = '生成文件…';
-      const out = XL.write(wb, { bookType: 'xlsx', type: 'array' });
-      const d = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      const filename = '出入库_' + String(book.serial).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) + '_'
-        + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.xlsx';
-      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const r = await api('POST', '/api/io-export', { bookId: book.id });
+      const bin = atob(r.dataBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const a = el('a');
       a.href = URL.createObjectURL(blob);
-      a.download = filename;
+      a.download = r.filename || ('出入库_' + book.serial + '.xlsx');
       document.body.appendChild(a);
       a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -3731,8 +3833,12 @@
     const editing = ioEdit && ioEdit.sheetId === sheet.id;
     const confirmLeaveEdit = () => {
       if (!ioEdit) return true;
-      const has = (ioEdit.dirty && ioEdit.dirty.size) || (ioEdit.newRows && ioEdit.newRows.some((r) => r.some((c) => String(c || '').trim() !== '')));
-      if (!has) { ioEdit = null; return true; }
+      const tb = $('#io-content tbody');
+      const newHas = tb ? Array.from(tb.querySelectorAll('tr.io-new-row')).some((tr) => {
+        const v = tr._ioNewVals || [];
+        return v.some((c, ci) => { const h = (sheet.columns || [])[ci] || ''; return !/序号|第.{0,4}个/.test(h) && String(c || '').trim() !== ''; });
+      }) : false;
+      if (!ioEdit.dirty.size && !newHas) { ioEdit = null; return true; }
       if (confirm('有未保存的修改，确定放弃并切换？')) { ioEdit = null; return true; }
       return false;
     };
@@ -3778,9 +3884,11 @@
     }
     // 右上角「开始修改」：进入编辑模式 → 直接点单元格改、表格下方空白行直接填新行 → 保存统一提交
     if (book && sheet && sheet.canEdit) {
-      if (!ioEdit || ioEdit.sheetId !== sheet.id) {
+      if (ioSaving && ioSaving.sheetId === sheet.id) {
+        bar.appendChild(el('span', 'io-saving', '💾 保存中…（' + ioSaving.pending + ' 行）'));
+      } else if (!ioEdit || ioEdit.sheetId !== sheet.id) {
         const bEdit = el('button', 'io-edit-btn', '✏️ 开始修改');
-        bEdit.onclick = () => { ioEdit = { sheetId: sheet.id, dirty: new Map(), newRows: [] }; renderIoPage(); };
+        bEdit.onclick = () => { ioEdit = { sheetId: sheet.id, dirty: new Map() }; renderIoPage(); };
         bar.appendChild(bEdit);
       } else {
         const bSave = el('button', 'primary io-edit-btn', '💾 保存');
@@ -3855,41 +3963,63 @@
       base[ci] = text;
       ioEdit.dirty.set(absIdx, base);
     };
+    // 编辑单元格：日期列点开原生日历；物流单号的「备注」列点开人名名单；其余直接可输入
+    const editAttachCell = (td, h, ci, absIdx, rowVals) => {
+      const hStr = String(h || '');
+      if (/日期|时间/.test(hStr)) {
+        td.classList.add('io-date-cell');
+        td.onclick = () => ioPickDate(td, () => {
+          if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
+        });
+        return;
+      }
+      if (/物流单号/.test(String(sheet.name || '')) && hStr === '备注') {
+        td.classList.add('io-name-cell');
+        td.onclick = () => ioPickName(td, ioData.ioNameList || ioData.usernames || [], () => {
+          if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
+        });
+        return;
+      }
+      td.contentEditable = 'true';
+      td.spellcheck = false;
+      td.oninput = () => {
+        if (rowVals) rowVals[ci] = td.textContent.trim(); else editMarkDirty(absIdx, ci, td.textContent.trim());
+      };
+    };
     ioWin.rows.forEach((r, ri) => {
       const tr = el('tr');
       const absIdx = ioWin.from + ri;
       cols.forEach((h, ci) => {
         const td = el('td', (colCls(String(h))).trim());
         td.textContent = (r.v || [])[ci] == null ? '' : (r.v || [])[ci];
-        if (editing) {
-          td.contentEditable = 'true';
-          td.spellcheck = false;
-          td.oninput = () => editMarkDirty(absIdx, ci, td.textContent.trim());
-        }
+        if (editing) editAttachCell(td, h, ci, absIdx, null);
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
     });
-    // 编辑模式：表格底部预留 5 行空白行，直接往下填即可追加（序号列自动续号，可改）
-    if (editing) {
+    // 编辑模式：底部空白行（初始 5 行；往下滚到底自动再补 10 行，可无限加；序号自动续号）
+    const ioBuildBlankRow = (seqNo) => {
+      const tr = el('tr', 'io-new-row');
+      const rowVals = cols.map((h, ci) => (ci === seqIdx && seqNo != null ? String(seqNo) : ''));
+      cols.forEach((h, ci) => {
+        const td = el('td', (colCls(String(h))).trim());
+        td.textContent = rowVals[ci];
+        editAttachCell(td, h, ci, -1, rowVals);
+        tr.appendChild(td);
+      });
+      tr._ioNewVals = rowVals;
+      return tr;
+    };
+    let seqIdx = -1;
+    let nextSeqNo = null;
+    {
       const last = ioWin.rows.length ? ioWin.rows[ioWin.rows.length - 1] : { v: [] };
-      const seqIdx = cols.findIndex((h) => /序号|第.{0,4}个/.test(String(h)));
+      seqIdx = cols.findIndex((h) => /序号|第.{0,4}个/.test(String(h)));
       const lastSeq = seqIdx >= 0 ? String((last.v || [])[seqIdx] == null ? '' : (last.v || [])[seqIdx]).trim() : '';
-      const nextSeqNo = /^\d+$/.test(lastSeq) ? Number(lastSeq) + 1 : null;
-      for (let n = 0; n < 5; n++) {
-        const tr = el('tr', 'io-new-row');
-        const rowVals = cols.map((h, ci) => (ci === seqIdx && nextSeqNo != null ? String(nextSeqNo + n) : ''));
-        cols.forEach((h, ci) => {
-          const td = el('td', (colCls(String(h))).trim());
-          td.textContent = rowVals[ci];
-          td.contentEditable = 'true';
-          td.spellcheck = false;
-          td.oninput = () => { rowVals[ci] = td.textContent.trim(); };
-          tr.appendChild(td);
-        });
-        tr._ioNewVals = rowVals;
-        tbody.appendChild(tr);
-      }
+      if (/^\d+$/.test(lastSeq)) nextSeqNo = Number(lastSeq) + 1;
+    }
+    if (editing) {
+      for (let n = 0; n < 5; n++) tbody.appendChild(ioBuildBlankRow(nextSeqNo != null ? nextSeqNo + n : null));
     }
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
@@ -3900,9 +4030,24 @@
     box.appendChild(cnt);
     if (!editing) wrap.scrollTop = wrap.scrollHeight; // 默认定位到最下方（最新位置）；编辑模式保持原位避免跳动
 
-    // 上翻到顶：向云端再取更早的 1000 行（前插，保持视口位置）
+    // 编辑模式：滚到底自动补 10 行空白（可无限添加）；阅读模式：上翻加载更早的行
     wrap.onscroll = async () => {
-      if (editing) return; // 编辑模式暂停懒加载，避免重渲染打断输入
+      if (editing) {
+        if (wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 80) {
+          const tb = wrap.querySelector('tbody');
+          if (tb) {
+            let lastSeq = null;
+            const allRows = tb.querySelectorAll('tr.io-new-row');
+            if (allRows.length) {
+              const v = allRows[allRows.length - 1]._ioNewVals || [];
+              const sv = seqIdx >= 0 ? String(v[seqIdx] == null ? '' : v[seqIdx]).trim() : '';
+              if (/^\d+$/.test(sv)) lastSeq = Number(sv) + 1;
+            }
+            for (let n = 0; n < 10; n++) tb.appendChild(ioBuildBlankRow(lastSeq != null ? lastSeq + n : null));
+          }
+        }
+        return;
+      }
       if (wrap.scrollTop > 80 || ioWin.loading || ioWin.capReached || ioWin.from <= 0 || ioWin.sheetId !== sheet.id) return;
       ioWin.loading = true;
       const want = Math.min(1000, ioWin.from);
@@ -3922,49 +4067,120 @@
     };
   }
 
-  // 编辑模式保存：已有行的修改 → update-rows（一次批量）；底部空白行 → append-rows（一次批量）
+  // 日期格日历点选（原生日历；写回格式与该格原文一致：YYYY-MM-DD 或 YYYY/MM/D；含时分则带时间选择）
+  function ioPickDate(td, onDone) {
+    if (td.querySelector('input')) return;
+    const cur = td.textContent.trim();
+    const timeMatch = cur.match(/(\d{1,2}):(\d{2})/);
+    const hasTime = !!timeMatch;
+    const m = cur.match(/(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})/);
+    const inp = document.createElement('input');
+    inp.type = (hasTime && m) ? 'datetime-local' : 'date';
+    if (m) {
+      const iso = m[1] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[3]).padStart(2, '0');
+      inp.value = hasTime ? iso + 'T' + timeMatch[1].padStart(2, '0') + ':' + timeMatch[2] : iso;
+    }
+    inp.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;';
+    td.style.position = 'relative';
+    td.appendChild(inp);
+    inp.focus();
+    inp.onchange = () => {
+      const v = inp.value || '';
+      let out = '';
+      if (v) {
+        const tIdx = v.indexOf('T');
+        const dPart = tIdx >= 0 ? v.slice(0, tIdx) : v;
+        const tPart = tIdx >= 0 ? v.slice(tIdx + 1, tIdx + 6) : '';
+        out = dPart;
+        if (m && cur.indexOf('/') !== -1 && !/年|月/.test(cur)) out = out.replace(/-/g, '/'); // 沿用原文的斜杠格式
+        if (tPart) out += ' ' + tPart;
+      }
+      td.textContent = out;
+      inp.remove();
+      onDone();
+    };
+    inp.onblur = () => { setTimeout(() => { if (inp.parentNode) inp.remove(); }, 200); };
+  }
+
+  // 「备注」人名选择（物流单号分表编辑模式）：名单由 admin 在设置里从注册账号勾选
+  function ioPickName(td, names, onDone) {
+    document.querySelectorAll('.io-name-pop').forEach((p) => p.remove());
+    const pop = el('div', 'io-name-pop');
+    (names || []).forEach((n) => {
+      const it = el('div', 'io-name-item', n);
+      it.onclick = (e) => {
+        e.stopPropagation();
+        td.textContent = n;
+        pop.remove();
+        document.removeEventListener('click', close);
+        onDone();
+      };
+      pop.appendChild(it);
+    });
+    if (!(names || []).length) pop.appendChild(el('div', 'io-name-item', '（名单为空：设置 → 出入库权限管理 → 备注人名名单）'));
+    td.style.position = 'relative';
+    td.appendChild(pop);
+    const close = (e) => {
+      if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', close); }
+    };
+    setTimeout(() => document.addEventListener('click', close), 0);
+  }
+
+  // 编辑模式保存（观感实时）：先本地落位并立即回阅读界面，云端提交放后台；失败自动回编辑模式且改动原样保留
   async function saveIoEdits(sheet) {
     if (!ioEdit || ioEdit.sheetId !== sheet.id) return;
+    const tbody = $('#io-content tbody');
     const updates = Array.from(ioEdit.dirty.entries()).map(([idx, values]) => ({ idx, values }));
-    const newRows = Array.from($('#io-content tbody').querySelectorAll('tr.io-new-row'))
-      .map((tr) => tr._ioNewVals || [])
+    const newRows = Array.from((tbody || { querySelectorAll: () => [] }).querySelectorAll('tr.io-new-row'))
+      .map((tr) => (tr._ioNewVals || []).slice())
       .filter((vals) => vals.some((c, ci) => {
         const h = (sheet.columns || [])[ci] || '';
-        if (/序号|第.{0,4}个/.test(h)) {
-          // 序号列：只有当内容与自动续号预填不同时才算有内容（纯空白行不会误提交）
-          return false;
-        }
+        if (/序号|第.{0,4}个/.test(h)) return false; // 纯空白行（仅自动序号）不提交
         return String(c || '').trim() !== '';
       }));
     if (!updates.length && !newRows.length) { ioEdit = null; renderIoPage(); return; }
+    // 快照：失败时回滚窗口并带着原改动回到编辑模式
+    const snapshot = {
+      dirty: new Map(ioEdit.dirty),
+      newRows: newRows.map((v) => v.slice()),
+      rows: ioWin.rows.slice(),
+      from: ioWin.from,
+      total: ioWin.total,
+    };
+    // 乐观落位：已改行写回窗口；新行进窗口尾部
+    snapshot.dirty.forEach((values, idx) => {
+      const ri = idx - ioWin.from;
+      if (ri >= 0 && ri < ioWin.rows.length) ioWin.rows[ri].v = values.slice();
+    });
+    newRows.forEach((v) => ioWin.rows.push({ v: v.slice(), at: Date.now(), by: me.username }));
+    ioWin.total += newRows.length;
+    ioEdit = null;
+    ioSaving = { sheetId: sheet.id, pending: updates.length + newRows.length };
+    cacheIoWindow();
+    (ioData.books || []).forEach((b) => {
+      const s = (b.sheets || []).find((x) => x.id === sheet.id);
+      if (s) s.rowCount = ioWin.total;
+    });
+    renderIoPage(); // 立即回阅读界面
     try {
-      if (updates.length) {
-        const r = await api('POST', '/api/io-item', { action: 'update-rows', sheetId: sheet.id, updates });
-        // 本地同步已改行（记录时间/记录人不再展示，无需更新 meta）
-        ioEdit.dirty.forEach((values, idx) => {
-          const ri = idx - ioWin.from;
-          if (ri >= 0 && ri < ioWin.rows.length) ioWin.rows[ri].v = values.slice();
-        });
-      }
-      if (newRows.length) {
-        const r2 = await api('POST', '/api/io-item', { action: 'append-rows', sheetId: sheet.id, rows: newRows });
-        if (Number.isFinite(r2.total)) ioWin.total = r2.total;
-        (ioData.books || []).forEach((b) => {
-          const s = (b.sheets || []).find((x) => x.id === sheet.id);
-          if (s) s.rowCount = r2.total;
-        });
-      }
-      // 已改行/新行落库后，从云端按当前窗口重取一次，保证与服务器一致
-      const tailN = Math.min(20000, Math.max(800, ioWin.rows.length + newRows.length));
-      const res = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: Math.max(0, ioWin.total - tailN), to: ioWin.total });
-      ioWin.rows = res.rows;
-      ioWin.from = Math.max(0, ioWin.total - res.rows.length);
-      ioEdit = null;
+      if (updates.length) await api('POST', '/api/io-item', { action: 'update-rows', sheetId: sheet.id, updates });
+      if (newRows.length) await api('POST', '/api/io-item', { action: 'append-rows', sheetId: sheet.id, rows: newRows });
+      ioSaving = null;
+      renderIoPage(); // 「保存中…」标记消失（行内容与云端一致，无需重拉）
+    } catch (e) {
+      ioSaving = null;
+      ioWin.rows = snapshot.rows;
+      ioWin.from = snapshot.from;
+      ioWin.total = snapshot.total;
+      (ioData.books || []).forEach((b) => {
+        const s = (b.sheets || []).find((x) => x.id === sheet.id);
+        if (s) s.rowCount = snapshot.total;
+      });
+      ioEdit = { sheetId: sheet.id, dirty: snapshot.dirty, newRows: [] };
       cacheIoWindow();
       renderIoPage();
-      const nw = $('#io-content .io-table-wrap');
-      if (nw) nw.scrollTop = nw.scrollHeight;
-    } catch (e) { alert('保存失败：' + e.message); }
+      alert('保存失败：' + e.message + '\n已回到编辑模式，改动原样保留——可直接再点「💾 保存」重试。');
+    }
   }
 
   // 分表权限弹窗（admin）：可编辑名单 + 可见名单（点保存统一提交）
