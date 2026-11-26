@@ -795,18 +795,15 @@ tr.recv-row-overdue td.col-date-t { color: #d93025; font-weight: 700; }
 /* 库存合计行：悬浮在表头正下方不随滚动消失（表头行高 30px + 底部 4px 遮挡条 → top 对齐 34px） */
 #stock-content .price-content thead th { height: 30px; }
 #stock-content .price-content thead tr.stock-total-row td { position: sticky; top: 34px; z-index: 1; box-shadow: 0 1px 0 #dfe3e9; }
-/* 无库存产品统计·批量修改：保持 5 列原格结构，拖动把手/删除按钮悬浮在行两侧（向两侧拓宽，不挤压列宽） */
-.ns-edit-table { width: calc(100% - 56px) !important; margin: 0 auto; table-layout: fixed; }
-.ns-edit-row { position: relative; }
-.ns-edit-table td.ns-side { position: absolute; left: -30px; top: 50%; transform: translateY(-50%); width: 26px; padding: 0; border-bottom: none; text-align: center; }
-.ns-edit-table td.ns-side-r { position: absolute; right: -30px; top: 50%; transform: translateY(-50%); width: 26px; padding: 0; border-bottom: none; text-align: center; }
+/* 无库存产品统计·批量修改：弹窗整体加宽约 100px，左右各多一窄常规列放滑块/删除；5 个数据列原宽原地编辑 */
+#modal-box.ns-batch-wide { width: min(1340px, 98vw); }
+.ns-edit-table td.ns-cell { cursor: text; outline: none; word-break: break-all; }
+.ns-edit-table td.ns-cell:focus { background: #fbf9ef; } /* 原格编辑：无输入框无蓝框，焦点仅极淡底色 */
 .ns-edit-table .drag-ns { cursor: grab; color: #7c8698; font-size: 15px; user-select: none; }
 .ns-edit-table .drag-ns:active { cursor: grabbing; }
-@media (max-width: 768px) {
-  .ns-edit-table { width: calc(100% - 40px) !important; }
-  .ns-edit-table td.ns-side { left: -22px; width: 20px; }
-  .ns-edit-table td.ns-side-r { right: -22px; width: 20px; }
-}
+.ns-edit-table td.col-drag, .ns-edit-table th.col-drag { text-align: center; padding: 6px 2px; }
+.ns-edit-table td.col-del-td, .ns-edit-table th.col-del-td { text-align: center; padding: 6px 2px; }
+.ns-edit-table .fav-del { padding: 3px 7px; font-size: 13px; }
 /* 价格页签：激活态悬停时保持蓝色不泛白 */
 .price-tab.active:hover { background: #4d6bfe; border-color: #4d6bfe; color: #fff; }
 /* 设置：侧栏拖拽排序 */

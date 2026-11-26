@@ -3354,10 +3354,28 @@
     const d = noStockData || { items: [], canEdit: false };
     const rows = (d.items || []).map((r) => ({ ...r }));
     const editing = d.canEdit && noStockBatch;
+    // 批量修改：弹窗整体加宽（5 个数据列宽度不变，左右各多一窄列放滑块/删除）
+    const mbox = $('#modal-box');
+    if (mbox) mbox.classList.toggle('ns-batch-wide', editing);
     const tbl = el('table', 'stock-table nostock-table' + (editing ? ' ns-edit-table' : ''));
     const trh = el('tr');
-    // 编辑模式也保持 5 列原格结构：拖动把手/删除按钮悬浮在行两侧（不占列、不挤压原格子）
-    ['名称', '市场价1', '市场价2', '市场价3', '定价'].forEach((h) => trh.appendChild(el('th', '', h)));
+    if (editing) trh.appendChild(el('th', 'col-drag', '滑'));
+    const colWidths = editing
+      ? ['32%', '16%', '16%', '16%', '20%'] // fixed 布局：名称列最宽（与查看模式视觉接近），剩余给操作列
+      : null;
+    const headTexts = ['名称', '市场价1', '市场价2', '市场价3', '定价'];
+    headTexts.forEach((h, i) => {
+      const th = el('th', '', h);
+      if (colWidths) th.style.width = colWidths[i];
+      trh.appendChild(th);
+    });
+    if (editing) trh.appendChild(el('th', 'col-del-td', '删'));
+    if (editing) {
+      // table-layout: fixed：拖动列/删除列固定窄宽，5 个数据列保持适宜写字的宽度
+      tbl.style.tableLayout = 'fixed';
+      trh.children[0].style.width = '40px';
+      trh.children[trh.children.length - 1].style.width = '48px';
+    }
     const thead = el('thead');
     thead.appendChild(trh);
     tbl.appendChild(thead);
@@ -3381,16 +3399,16 @@
       bar.appendChild(bSave);
       bar.appendChild(bCancel);
       body.appendChild(bar);
-      body.appendChild(el('div', 'modal-hint', '批量修改：直接在原来的格子里改；⠿ 把手（行左端）按住拖动调顺序，🗑（行右端）删除行；最后点「保存全部」一次性生效；所有列均可留空。'));
+      body.appendChild(el('div', 'modal-hint', '批量修改：点格子直接写（原处编辑）；⠿（行左端）按住拖动调顺序，🗑（行右端）删除行；最后点「保存全部」一次性生效；所有列均可留空。'));
       const persist = () => { noStockData = { ...d, items: rows }; }; // 增/删行重渲染前先写回，否则改动丢失
       let dragTr = null; // 拖动排序（与设置/收藏夹同款原生拖拽：按住 ⠿ 才整行可拖，dragover 实时让位；数据只挪顺序，保存统一在「保存全部」）
       rows.forEach((r) => {
-        const tr = el('tr', 'ns-edit-row'); // 行相对定位：把手/删除按钮悬浮在两侧
+        const tr = el('tr');
         tr._nsRow = r;
-        const tdDrag = el('td', 'ns-side'); // 悬浮左端（不占列）
+        const tdDrag = el('td', 'col-drag');
         const grip = el('span', 'drag-ns', '⠿');
         grip.title = '按住拖动调整顺序（保存全部后生效）';
-        grip.addEventListener('mousedown', () => { tr.draggable = true; }); // 只有按住把手才允许拖整行，不影响输入框选字
+        grip.addEventListener('mousedown', () => { tr.draggable = true; }); // 只有按住把手才允许拖整行，不影响编辑格选字
         tr.addEventListener('dragstart', (e) => {
           dragTr = tr;
           tr.classList.add('dragging');
@@ -3417,14 +3435,17 @@
         });
         tdDrag.appendChild(grip);
         tr.appendChild(tdDrag);
+        // 原格直接编辑（同出入库编辑模式）：无输入框无蓝框，点进格子光标直接写
         ['name', 'mp1', 'mp2', 'mp3', 'price'].forEach((k) => {
-          const td = el('td');
-          const inp = stockCellInput(r[k] || '', () => { r[k] = inp.value; }); // 写行对象本身：拖动换位后依旧正确
-          td.appendChild(inp);
+          const td = el('td', 'ns-cell');
+          td.contentEditable = 'true';
+          td.spellcheck = false;
+          td.textContent = r[k] || '';
+          td.oninput = () => { r[k] = td.textContent.trim(); }; // 写行对象本身：拖动换位后依旧正确
           tr.appendChild(td);
         });
-        const tdDel = el('td', 'ns-side-r'); // 悬浮右端（不占列）
-        const bDel = el('button', 'fav-del ns-del-btn', '🗑');
+        const tdDel = el('td', 'col-del-td');
+        const bDel = el('button', 'fav-del', '🗑');
         bDel.title = '删除该行（保存全部后生效）';
         bDel.onclick = () => { const i2 = rows.indexOf(r); if (i2 >= 0) rows.splice(i2, 1); persist(); renderNoStockBody(); };
         tdDel.appendChild(bDel);
@@ -3433,7 +3454,7 @@
       });
       const trAdd = el('tr');
       const tdAdd = el('td');
-      tdAdd.colSpan = 5;
+      tdAdd.colSpan = 7;
       const bAdd = el('button', 'primary', '＋ 新增一行');
       bAdd.onclick = () => { rows.push({ name: '', mp1: '', mp2: '', mp3: '', price: '' }); persist(); renderNoStockBody(); };
       tdAdd.appendChild(bAdd);
@@ -5786,6 +5807,7 @@
     $('#modal-mask').classList.add('hidden');
     $('#modal-body').innerHTML = '';
     $('#modal-box').classList.remove('modal-wide');
+    $('#modal-box').classList.remove('ns-batch-wide'); // 无库存批量修改的加宽弹窗复位
   }
 
   function openHistoryModal(h) {
