@@ -3,7 +3,7 @@
   'use strict';
 
   let API = String((window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '').replace(/\/+$/, '');
-  console.log('[报价系统] app.js build v20260619-90（出入库修复：空状态也显示上传入口；分表标签改业绩报表同款；设置新增「出入库权限管理」折叠区；侧栏顺序本地缓存消除闪动；库存合计行置顶；应收日期表头点击排序）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
+  console.log('[报价系统] app.js build v20260619-91（出入库大文件架构：浏览器解析+3MB分片上传+分表独立存储+行窗口懒加载；导出整本还原上传原格式；设置含出入库权限管理；侧栏顺序缓存）'); // 版本标记：F12 可确认浏览器加载的是哪个版本
 
   // ---------- 状态 ----------
   // 模拟登录：地址栏 ?imp=<token> → 存入本标签页的 sessionStorage（不影响 admin 自己标签页的登录态），并立即从地址栏抹掉
@@ -3456,9 +3456,35 @@
   }
 
   // ---------- 出入库（出入库序列号 = 上传的 Excel 工作簿；每个工作表 = 一个分表；可见/可编辑按分表勾名单；行按时间正序，新行始终在最下方） ----------
+  // 存储架构：/api/io 只给元数据；行数据走 /api/io-rows 按窗口懒加载（支持 28 万行级分表）；
+  // 上传 = 浏览器解析（SheetJS）→ 3MB 分片 → upload-begin/chunk/commit（避开云函数 6MB 请求上限）；
+  // 导出 = 整本还原上传时的 Excel 格式（相同分表名/相同列/相同行序，无系统附加列）。
   let ioData = null;
   let ioBookId = '';
   let ioSheetId = '';
+  let ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' }; // 当前分表的行窗口（懒加载）
+
+  function ioCellStr(v) {
+    if (v == null) return '';
+    if (v instanceof Date) {
+      const p = (n) => String(n).padStart(2, '0');
+      const base = v.getFullYear() + '-' + p(v.getMonth() + 1) + '-' + p(v.getDate());
+      const hh = p(v.getHours()), mm = p(v.getMinutes()), ss = p(v.getSeconds());
+      return hh === '00' && mm === '00' && ss === '00' ? base : base + ' ' + hh + ':' + mm;
+    }
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) return '';
+      return String(Math.round(v * 1000000) / 1000000); // 规整浮点尾差（26.00000000001 → 26）
+    }
+    return String(v).trim();
+  }
+
+  function u8ToB64(u8) {
+    let s = '';
+    const CH = 0x8000;
+    for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, Math.min(u8.length, i + CH)));
+    return btoa(s);
+  }
 
   async function loadIo() {
     const box = $('#io-content');
@@ -3478,23 +3504,170 @@
   }
 
   function refreshIo() {
-    api('GET', '/api/io').then((d) => { ioData = d; renderIoPage(); }).catch(() => {});
+    api('GET', '/api/io').then((d) => {
+      ioData = d;
+      // 元数据刷新后行窗口仍有效（行文件按 sheetId 寻址），只重绘外壳
+      renderIoPage();
+    }).catch(() => {});
   }
 
-  async function exportIoExcel(sheet) {
+  async function loadIoRowsTail(sheet) {
+    // 首次加载当前分表：只取末尾 800 行（最新位置），上翻再补更早的
     try {
-      const r = await api('POST', '/api/io-export', { sheetId: sheet.id });
-      const bin = atob(r.dataBase64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const first = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: 0, to: 1 });
+      const total = first.total;
+      const from = Math.max(0, total - 800);
+      const res = await api('POST', '/api/io-rows', { sheetId: sheet.id, from, to: total });
+      ioWin = { sheetId: sheet.id, from, total, rows: res.rows, loading: false, capReached: false, err: '' };
+    } catch (e) {
+      ioWin = { sheetId: sheet.id, from: 0, total: 0, rows: [], loading: false, capReached: true, err: e.message };
+    }
+    renderIoPage();
+  }
+
+  // 整本导出（原格式）：分页拉全所有可见分表的行 → SheetJS 生成与上传时结构相同的 xlsx
+  async function exportIoBook(book) {
+    openModal('导出出入库（原格式）');
+    const body = $('#modal-body');
+    const status = el('div', 'modal-hint', '准备导出…');
+    body.appendChild(status);
+    try {
+      const XL = window.XLSX;
+      if (!XL) throw new Error('Excel 组件尚未加载完成，请稍后重试');
+      const wb = XL.utils.book_new();
+      for (const s of book.sheets || []) {
+        status.textContent = '拉取「' + s.name + '」…';
+        const first = await api('POST', '/api/io-rows', { sheetId: s.id, from: 0, to: 10000 });
+        const total = first.total;
+        const all = first.rows.map((r) => r.v || []);
+        let from = first.rows.length;
+        while (from < total) {
+          const res = await api('POST', '/api/io-rows', { sheetId: s.id, from, to: Math.min(total, from + 10000) });
+          res.rows.forEach((r) => all.push(r.v || []));
+          from += res.rows.length;
+          status.textContent = '拉取「' + s.name + '」' + from + ' / ' + total + ' 行…';
+        }
+        const aoa = [(s.columns || []).slice()].concat(all);
+        XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet(aoa), String(s.name).slice(0, 31) || ('分表' + (wb.SheetNames.length + 1)));
+      }
+      status.textContent = '生成文件…';
+      const out = XL.write(wb, { bookType: 'xlsx', type: 'array' });
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const filename = '出入库_' + String(book.serial).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) + '_'
+        + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.xlsx';
+      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const a = el('a');
       a.href = URL.createObjectURL(blob);
-      a.download = r.filename || '出入库导出.xlsx';
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    } catch (e) { alert('导出失败：' + e.message); }
+      closeModal();
+    } catch (e) { status.textContent = '导出失败：' + e.message; }
+  }
+
+  // 上传弹窗：浏览器解析工作簿 → 每个分表按 3MB 分片上传（begin → chunk×N → commit）
+  function openIoUploadModal(defaultSerial) {
+    openModal('上传出入库工作簿');
+    const body = $('#modal-body');
+    body.appendChild(el('div', 'modal-hint', '工作簿里的每个工作表会成为一个分表（同名分表保留原有 权限名单）；整本上传后即可查看与追加。支持 .xlsx / .xls，大文件自动分片上传。'));
+    const rowIn = el('div', 'modal-actions');
+    const serialInp = el('input', 'edit-input');
+    serialInp.placeholder = '序列号（留空 = 用文件名）';
+    serialInp.value = defaultSerial || '';
+    rowIn.appendChild(serialInp);
+    const fileInp = el('input');
+    fileInp.type = 'file';
+    fileInp.accept = '.xlsx,.xls';
+    rowIn.appendChild(fileInp);
+    body.appendChild(rowIn);
+    const status = el('div', 'modal-hint', '请选择 Excel 文件。');
+    body.appendChild(status);
+    const bGo = el('button', 'primary', '开始上传');
+    const act = el('div', 'modal-actions');
+    const bCancel = el('button', '', '取消');
+    bCancel.onclick = closeModal;
+    act.appendChild(bGo);
+    act.appendChild(bCancel);
+    body.appendChild(act);
+    let busy = false;
+    bGo.onclick = async () => {
+      if (busy) return;
+      const f = fileInp.files && fileInp.files[0];
+      if (!f) { status.textContent = '请先选择 Excel 文件。'; return; }
+      const XL = window.XLSX;
+      if (!XL) { status.textContent = 'Excel 组件尚未加载完成，请稍后重试。'; return; }
+      busy = true;
+      bGo.disabled = true;
+      try {
+        status.textContent = '解析工作簿…（大文件需要几秒）';
+        const ab = await f.arrayBuffer();
+        const wb = XL.read(new Uint8Array(ab), { type: 'array', cellDates: true });
+        const names = (wb.SheetNames || []).filter(Boolean);
+        if (!names.length) throw new Error('Excel 中没有工作表');
+        if (names.length > 60) throw new Error('工作表过多（最多 60 个分表）');
+        const sheets = [];
+        names.forEach((name) => {
+          const ws = wb.Sheets[name];
+          if (!ws) return;
+          const grid = XL.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+          // 表头 = 第一个有内容的行；其后为数据行（与系统解析规则一致）
+          let header = null;
+          let startIdx = -1;
+          for (let i = 0; i < grid.length; i++) {
+            const cells = (grid[i] || []).map(ioCellStr);
+            if (cells.some((c) => c !== '')) { header = cells; startIdx = i + 1; break; }
+          }
+          if (!header) return;
+          while (header.length && header[header.length - 1] === '') header.pop();
+          if (!header.length) return;
+          if (header.length > 60) header = header.slice(0, 60);
+          const cols = header.length;
+          const rows = [];
+          for (let i = startIdx; i < grid.length; i++) {
+            const raw = (grid[i] || []).map(ioCellStr);
+            if (!raw.some((c) => c !== '')) continue;
+            const v = [];
+            for (let j = 0; j < cols; j++) v.push(raw[j] || '');
+            rows.push(v);
+          }
+          if (rows.length > 500000) throw new Error('「' + name + '」超过 50 万行上限');
+          sheets.push({ name: String(name).trim().slice(0, 60) || ('分表' + (sheets.length + 1)), columns: header, rows });
+        });
+        if (!sheets.length) throw new Error('Excel 中没有有效的工作表（每个分表的第一行需为表头）');
+        const serial = serialInp.value.trim() || f.name.replace(/\.[^.]+$/, '');
+        let totalRows = 0;
+        let replaced = false;
+        const CH = 3 * 1024 * 1024; // 每片 3MB（base64 后约 4MB，避开云函数 6MB 请求上限）
+        for (const s of sheets) {
+          const json = JSON.stringify({ columns: s.columns, rows: s.rows });
+          const bytes = new TextEncoder().encode(json);
+          const chunks = Math.max(1, Math.ceil(bytes.length / CH));
+          const b1 = await api('POST', '/api/io-item', { action: 'upload-begin', serial, name: s.name, columns: s.columns, rowCount: s.rows.length, totalChunks: chunks });
+          for (let i = 0; i < chunks; i++) {
+            const slice = bytes.subarray(i * CH, Math.min(bytes.length, (i + 1) * CH));
+            await api('POST', '/api/io-item', { action: 'upload-chunk', uploadId: b1.uploadId, idx: i, dataBase64: u8ToB64(slice) });
+            status.textContent = '「' + s.name + '」上传中 ' + (i + 1) + ' / ' + chunks + ' 片（' + s.rows.length + ' 行）…';
+          }
+          const done = await api('POST', '/api/io-item', { action: 'upload-commit', uploadId: b1.uploadId });
+          replaced = replaced || !!done.replaced;
+          totalRows += done.rows || 0;
+          status.textContent = '「' + s.name + '」完成：' + (done.rows || 0) + ' 行';
+        }
+        alert((replaced ? '已替换「' + serial + '」（回溯）' : '已新建「' + serial + '」') + '：' + sheets.length + ' 个分表 / ' + totalRows + ' 行。同名分表保留了原有权限名单。');
+        closeModal();
+        ioBookId = '';
+        ioSheetId = '';
+        ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
+        refreshIo();
+      } catch (e) {
+        status.textContent = '上传失败：' + e.message;
+        bGo.disabled = false;
+      }
+      busy = false;
+    };
+    setTimeout(() => fileInp.focus(), 0);
   }
 
   function renderIoPage() {
@@ -3521,7 +3694,11 @@
     if (book) {
       (book.sheets || []).forEach((s) => {
         const t = el('button', 'price-tab' + (s.id === ioSheetId ? ' active' : ''), s.name);
-        t.onclick = () => { ioSheetId = s.id; renderIoPage(); };
+        t.onclick = () => {
+          ioSheetId = s.id;
+          ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
+          renderIoPage();
+        };
         bar.appendChild(t);
       });
     }
@@ -3533,37 +3710,17 @@
         if (b.id === ioBookId) op.selected = true;
         sel.appendChild(op);
       });
-      sel.onchange = () => { ioBookId = sel.value; ioSheetId = ''; renderIoPage(); };
+      sel.onchange = () => {
+        ioBookId = sel.value;
+        ioSheetId = '';
+        ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
+        renderIoPage();
+      };
       bar.appendChild(sel);
     }
     if (d.canUpload) {
-      const serialInp = el('input', 'edit-input');
-      serialInp.placeholder = '序列号（留空=用文件名）';
-      serialInp.style.width = '180px';
-      const file = el('input');
-      file.type = 'file';
-      file.accept = '.xlsx,.xls';
-      file.style.display = 'none';
       const bUp = el('button', 'primary', '📤 上传序列号表');
-      bUp.onclick = () => file.click();
-      file.onchange = () => {
-        const f = file.files && file.files[0];
-        if (!f) return;
-        const serial = serialInp.value.trim() || f.name.replace(/\.[^.]+$/, '');
-        const rd = new FileReader();
-        rd.onload = async () => {
-          try {
-            const r = await api('POST', '/api/io-item', { action: 'upload', serial, dataBase64: rd.result.split(',')[1] });
-            alert((r.replaced ? '已替换「' + r.serial + '」（回溯）' : '已新建「' + r.serial + '」') + '：' + r.sheets + ' 个分表 / ' + r.rows + ' 行。同名分表保留了原有权限名单。');
-            ioBookId = '';
-            ioSheetId = '';
-            refreshIo();
-          } catch (e) { alert(e.message); }
-          file.value = '';
-        };
-        rd.readAsDataURL(f);
-      };
-      bar.appendChild(serialInp);
+      bUp.onclick = () => openIoUploadModal('');
       bar.appendChild(bUp);
       if (book) {
         const bDelBook = el('button', 'danger', '🗑 删序列号');
@@ -3573,22 +3730,22 @@
             await api('POST', '/api/io-item', { action: 'delete-book', bookId: book.id });
             ioBookId = '';
             ioSheetId = '';
+            ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
             refreshIo();
           } catch (e) { alert(e.message); }
         };
         bar.appendChild(bDelBook);
       }
-      bar.appendChild(file);
     }
-    if (sheet) {
-      const bExp = el('button', '', '⬇️ 导出当前分表');
-      bExp.onclick = () => exportIoExcel(sheet);
+    if (book) {
+      const bExp = el('button', '', '⬇️ 导出整本（原格式）');
+      bExp.onclick = () => exportIoBook(book);
       bar.appendChild(bExp);
     }
     box.appendChild(bar);
 
     if (!book) {
-      box.appendChild(el('div', 'modal-hint', '还没有出入库序列号：填写序列号（留空=用文件名），点「📤 上传序列号表」导入第一份 Excel——工作簿里每个工作表会成为一个分表。'));
+      box.appendChild(el('div', 'modal-hint', '还没有出入库序列号：点「📤 上传序列号表」导入第一份 Excel——工作簿里每个工作表会成为一个分表。'));
       return;
     }
     if (!sheet) {
@@ -3608,6 +3765,7 @@
         try {
           await api('POST', '/api/io-item', { action: 'delete-sheet', sheetId: sheet.id });
           ioSheetId = '';
+          ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
           refreshIo();
         } catch (e) { alert(e.message); }
       };
@@ -3616,8 +3774,20 @@
     }
     box.appendChild(subBar);
 
-    // 数据表：列 = 上传文件表头 + 记录时间/记录人（系统列）；导入行标记（导入）
+    // 行窗口：当前分表未加载 → 先取末尾 800 行（最新位置）
+    if (ioWin.sheetId !== sheet.id && !ioWin.loading) {
+      ioWin.loading = true;
+      loadIoRowsTail(sheet).finally(() => { ioWin.loading = false; });
+    }
+    const windowReady = ioWin.sheetId === sheet.id;
+
+    // 数据表：列 = 上传文件表头 + 记录时间/记录人（系统列，页面展示用；导出文件不含）
     const wrap = el('div', 'io-table-wrap');
+    if (!windowReady) {
+      wrap.appendChild(el('div', 'modal-hint', ioWin.err ? ('加载失败：' + ioWin.err) : '加载行数据中…'));
+      box.appendChild(wrap);
+      return;
+    }
     const tbl = el('table', 'stock-table io-table');
     const trh = el('tr');
     (sheet.columns || []).forEach((h) => trh.appendChild(el('th', '', h)));
@@ -3627,7 +3797,7 @@
     thead.appendChild(trh);
     tbl.appendChild(thead);
     const tbody = el('tbody');
-    (sheet.rows || []).forEach((r) => {
+    ioWin.rows.forEach((r) => {
       const tr = el('tr');
       (r.v || []).forEach((c) => { const td = el('td'); td.textContent = c; tr.appendChild(td); });
       const tdA = el('td', 'io-meta');
@@ -3641,11 +3811,33 @@
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
     box.appendChild(wrap);
+    const cnt = el('div', 'modal-hint', '共 ' + ioWin.total + ' 行，当前显示 ' + ioWin.rows.length + ' 行' + (ioWin.from > 0 ? '（上翻加载更早）' : '')
+      + (ioWin.capReached && ioWin.from > 0 ? '；已达页面显示上限，更早的行请用「导出整本（原格式）」查看' : ''));
+    box.appendChild(cnt);
     wrap.scrollTop = wrap.scrollHeight; // 默认定位到最下方（最新位置）
+
+    // 上翻到顶：向云端再取更早的 1000 行（前插，保持视口位置）
+    wrap.onscroll = async () => {
+      if (wrap.scrollTop > 80 || ioWin.loading || ioWin.capReached || ioWin.from <= 0 || ioWin.sheetId !== sheet.id) return;
+      ioWin.loading = true;
+      const want = Math.min(1000, ioWin.from);
+      const prevH = wrap.scrollHeight;
+      const prevTop = wrap.scrollTop;
+      try {
+        const res = await api('POST', '/api/io-rows', { sheetId: sheet.id, from: ioWin.from - want, to: ioWin.from });
+        ioWin.rows = res.rows.concat(ioWin.rows);
+        ioWin.from -= want;
+        if (ioWin.rows.length >= 20000) ioWin.capReached = true;
+        renderIoPage();
+        const nw = $('#io-content .io-table-wrap');
+        if (nw) nw.scrollTop = nw.scrollHeight - prevH + prevTop; // 保持视口位置
+      } catch (e) { /* 上翻失败静默，可继续翻 */ }
+      ioWin.loading = false;
+    };
 
     // 追加行表单（可编辑者）：每列一个输入框；扫码枪在输入框内扫入即填，回车提交
     if (sheet.canEdit) {
-      const rowsAll = sheet.rows || [];
+      const rowsAll = ioWin.rows;
       const last = rowsAll.length ? rowsAll[rowsAll.length - 1] : { v: [] };
       const form = el('div', 'io-append');
       const inputs = [];
@@ -3664,9 +3856,11 @@
         if (!values.some((v) => String(v).trim() !== '')) { if (inputs[0]) inputs[0].focus(); return; }
         try {
           const r = await api('POST', '/api/io-item', { action: 'append', sheetId: sheet.id, values });
+          ioWin.rows.push(r.row); // 乐观追加：先上屏再后台刷新
+          if (Number.isFinite(r.total)) ioWin.total = r.total;
           (ioData.books || []).forEach((b) => {
             const s = (b.sheets || []).find((x) => x.id === sheet.id);
-            if (s) (s.rows = s.rows || []).push(r.row); // 乐观追加：先上屏再后台刷新
+            if (s) s.rowCount = r.total;
           });
           inputs.forEach((i) => {
             const idx = inputs.indexOf(i);
@@ -3676,7 +3870,6 @@
             else if (!/合计|总数/.test(h)) i.value = '';
           });
           renderIoPage();
-          refreshIo();
         } catch (e) { alert(e.message); }
       };
       bAdd.onclick = submit;
