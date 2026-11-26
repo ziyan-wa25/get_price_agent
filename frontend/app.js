@@ -2697,6 +2697,11 @@
       if (!defOpen) sec.style.display = 'none';
       return { head, sec };
     };
+    const openCollapse = (c) => { // 程序化展开折叠区（返回上一级时用）
+      c.sec.style.display = '';
+      const a = c.head.querySelector('.settings-arrow');
+      if (a) a.textContent = '▾';
+    };
     body.appendChild(el('div', 'settings-label', '页面开关'));
     const sec = el('div', 'settings-section');
     body.appendChild(sec);
@@ -2834,6 +2839,11 @@
         secPerm.appendChild(ioTop.head);
         secPerm.appendChild(secIo);
         renderIoPermSec(ioData);
+        if (reopenSettingsIo) {
+          reopenSettingsIo = false;
+          openCollapse(permTop); // 返回上一级：直接展开功能权限管理与出入库权限区
+          openCollapse(ioTop);
+        }
       };
       const renderIoPermSec = (dat) => {
         secIo.innerHTML = '';
@@ -2847,15 +2857,18 @@
             const svN = (s.selfViewers || []).length;
             row.appendChild(el('span', 'io-perm-sheet', '· ' + s.name + '（编辑 ' + (s.editors || []).length + ' / 可见 ' + (s.viewers || []).length + (svN ? ' / 只看自己 ' + svN : '') + '）'));
             const btn = el('button', '', '👥 设置名单');
-            btn.onclick = () => openIoPermModal(s);
+            btn.onclick = () => openIoPermModal(s, { fromSettings: true });
             row.appendChild(btn);
             secIo.appendChild(row);
           });
         });
-        // 物流单号·备注人名名单（从注册账号中勾选；编辑模式点「备注」列即弹该名单）
+        // 物流单号·备注人名名单（默认收起，保持设置区整洁；从注册账号中勾选）
         const usernames = dat.usernames || [];
         if (usernames.length) {
-          secIo.appendChild(el('div', 'settings-label', '物流单号 · 备注人名名单（勾选的人会出现在「备注」列的选择栏里）'));
+          const nameTop = mkCollapse('物流单号 · 备注人名名单（勾选的人出现在「备注」列选择栏）', false);
+          secIo.appendChild(nameTop.head);
+          secIo.appendChild(nameTop.sec);
+          const secNames = nameTop.sec;
           const grid = el('div', 'io-names-grid');
           const sel = new Set(dat.ioNameList || usernames);
           usernames.forEach((u) => {
@@ -2868,8 +2881,8 @@
             item.appendChild(sp);
             grid.appendChild(item);
           });
-          secIo.appendChild(grid);
-          const bNames = el('button', 'primary', '保存人名名单');
+          secNames.appendChild(grid);
+          const bNames = el('button', 'primary io-mail-btn', '💾 保存人名名单');
           bNames.onclick = async () => {
             const names = Array.from(grid.querySelectorAll('.io-name-chk')).filter((it) => it.querySelector('input').checked).map((it) => it.querySelector('span').textContent);
             try {
@@ -2878,8 +2891,8 @@
               alert('已保存：' + names.length + ' 人');
             } catch (e) { alert(e.message); }
           };
-          secIo.appendChild(bNames);
-          secIo.appendChild(el('div', 'modal-hint', '说明：名单只能从已注册的账号里勾选；「只看自己」的成员按行内备注=自己的用户名匹配可见行。'));
+          secNames.appendChild(bNames);
+          secNames.appendChild(el('div', 'modal-hint', '说明：名单只能从已注册的账号里勾选；「只看自己」的成员按行内备注=自己的用户名匹配可见行。'));
         }
       };
       renderIoPermSec(ioData);
@@ -4278,7 +4291,11 @@
   }
 
   // 分表权限弹窗（admin）：可编辑名单 + 可见名单（点保存统一提交）
-  function openIoPermModal(sheet) {
+  // 设置弹窗「返回上一级」标记：从设置打开的权限弹窗点返回 → 重新打开设置并展开出入库权限区
+  let reopenSettingsIo = false;
+
+  function openIoPermModal(sheet, opts) {
+    const fromSettings = !!(opts && opts.fromSettings);
     const isLogiSheet = /物流单号/.test(String(sheet.name || ''));
     openModal('分表权限 — ' + sheet.name);
     const body = $('#modal-body');
@@ -4289,7 +4306,9 @@
     const edSel = new Set(sheet.editors || []);
     const vwSel = new Set(sheet.viewers || []);
     const svSel = new Set(isLogiSheet ? (sheet.selfViewers || []) : []);
+    // 表格式排版：成员列 + 各权限列（物流单号 4 列，其余 3 列）；表头悬浮、行分隔线
     const grid = el('div', 'io-perm-grid');
+    grid.style.gridTemplateColumns = isLogiSheet ? '1fr 76px 76px 88px' : '1fr 84px 84px';
     grid.appendChild(el('div', 'io-perm-head', '成员'));
     grid.appendChild(el('div', 'io-perm-head', '可编辑'));
     grid.appendChild(el('div', 'io-perm-head', '可见'));
@@ -4336,7 +4355,7 @@
     });
     body.appendChild(grid);
     const actBar = el('div', 'modal-actions');
-    const bSave = el('button', 'primary', '保存');
+    const bSave = el('button', 'primary io-mail-btn', '💾 保存');
     bSave.onclick = async () => {
       try {
         const payload = { action: 'setperm', sheetId: sheet.id, editors: [...edSel], viewers: [...vwSel] };
@@ -4346,13 +4365,17 @@
         sheet.viewers = r.viewers;
         if (isLogiSheet) sheet.selfViewers = r.selfViewers || [];
         closeModal();
-        renderIoPage();
+        if (fromSettings) { reopenSettingsIo = true; openSettingsModal(); }
+        else renderIoPage();
       } catch (e) { alert(e.message); }
     };
-    const bCancel = el('button', '', '取消');
-    bCancel.onclick = closeModal;
+    const bBack = el('button', 'io-mail-btn', fromSettings ? '← 返回设置' : '取消');
+    bBack.onclick = () => {
+      closeModal();
+      if (fromSettings) { reopenSettingsIo = true; openSettingsModal(); }
+    };
     actBar.appendChild(bSave);
-    actBar.appendChild(bCancel);
+    actBar.appendChild(bBack);
     body.appendChild(actBar);
   }
 
