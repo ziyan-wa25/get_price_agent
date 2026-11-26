@@ -1170,6 +1170,7 @@
   let stockData = null;      // GET /api/stock 结果：{items, lastImportAt, lastImportBy, lastPriceChangeAt, lastPriceChangeBy, canSeePrice, canImport, canExport, canEdit}
   let stockBatchMode = null; // null | 'edit'（admin：整行改+标记删除） | 'wh'（库存导出员：仅改备注库房）
   let stockQtySort = null;   // null | 'desc' | 'asc'：点击「库存量」表头切换排序（仅普通浏览模式）
+  let stockNameSort = null;  // null | 'desc' | 'asc'：点击「货品名称」表头切换排序（中文拼音序；与库存量排序互斥）
   let stockEdits = {};       // 批量修改进行中的整行副本 {原始货品名称: {name, qty, cost, price, note, wh}}
   let stockDelSel = new Set(); // 批量删除勾选
   let stockWhEdits = {};     // 导出员的库房备注编辑副本 {原始货品名称: 新wh}
@@ -1293,8 +1294,13 @@
 
     const plainView = stockBatchMode === null;
     let items = stockFiltered();
-    // 库存量点击排序（仅普通浏览模式）：点一次倒序，再点一次正序
-    if (plainView && stockQtySort) {
+    // 表头点击排序（仅普通浏览模式）：货品名称与库存量互斥，后点的生效；各在 倒序/正序 间循环
+    if (plainView && stockNameSort) {
+      items = [...items].sort((a, b) => {
+        const c = String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN') || String(a.name || '').localeCompare(String(b.name || ''));
+        return stockNameSort === 'desc' ? -c : c;
+      });
+    } else if (plainView && stockQtySort) {
       items = [...items].sort((a, b) => {
         const x = Number(a.qty) || 0;
         const y = Number(b.qty) || 0;
@@ -1320,9 +1326,15 @@
       const th = el('th', cls, h === '删?' ? '删' : h);
       if (plainView && h === '库存量') {
         th.style.cursor = 'pointer';
-        th.title = '点击按库存量倒序，再次点击改为正序';
+        th.title = '点击按库存量倒序，再次点击改为正序（货品名称/库存量排序互斥）';
         th.textContent = '库存量' + (stockQtySort === 'desc' ? ' ▼' : (stockQtySort === 'asc' ? ' ▲' : ''));
-        th.onclick = () => { stockQtySort = stockQtySort === 'desc' ? 'asc' : 'desc'; renderStockPage(); };
+        th.onclick = () => { stockQtySort = stockQtySort === 'desc' ? 'asc' : 'desc'; stockNameSort = null; renderStockPage(); };
+      }
+      if (plainView && h === '货品名称') {
+        th.style.cursor = 'pointer';
+        th.title = '点击按货品名称倒序，再次点击改为正序（货品名称/库存量排序互斥）';
+        th.textContent = '货品名称' + (stockNameSort === 'desc' ? ' ▼' : (stockNameSort === 'asc' ? ' ▲' : ''));
+        th.onclick = () => { stockNameSort = stockNameSort === 'desc' ? 'asc' : 'desc'; stockQtySort = null; renderStockPage(); };
       }
       trh.appendChild(th);
     });
