@@ -525,10 +525,12 @@ tr.inv-row-zero td.num { color: #d93025; font-weight: 700; }
 .stock-table th.col-name, .stock-table td.col-name-t { text-align: left; padding-left: 10px; word-break: break-word; }
 /* 批量修改：悬浮保存条（滚动后仍可点击） */
 .stock-toolbar.sticky {
-  position: sticky; top: 8px; z-index: 40;
+  position: sticky; top: 0; z-index: 40;
   background: #fff; padding: 8px 12px; border-radius: 10px;
   box-shadow: 0 2px 10px rgba(31, 41, 55, 0.12);
 }
+/* 库存页：表头悬浮在工具栏正下方（工具栏实际高度由 JS 写入 --stock-bar-h，避免重叠/露缝） */
+#stock-content.has-toolbar thead th { top: var(--stock-bar-h, 46px); }
 /* 批量修改中被标记删除的行：红色底 + 名称划线 */
 tr.stock-row-del td { background: #fdecec; }
 tr.stock-row-del td.col-name-t { color: #b0b3b8; text-decoration: line-through; }

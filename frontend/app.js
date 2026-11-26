@@ -1281,8 +1281,18 @@
       bar.appendChild(bNs);
     }
     // 普通浏览模式：工具栏（新增配件/批量修改等）也悬浮在滚动区顶部，下滑时保持可见
+    // 悬浮工具栏：滚动区顶部常驻（普通浏览模式 = 新增配件/批量修改等；批量模式 = 保存/取消行）。
+    // 表头 sticky 的 top 用工具栏实际高度（CSS 变量），表头悬浮在工具栏正下方不重叠、不留缝。
     if (stockBatchMode === null && bar.children.length) bar.classList.add('sticky', 'main-sticky');
-    if (bar.children.length) box.appendChild(bar);
+    if (bar.children.length) {
+      box.classList.add('has-toolbar');
+      box.appendChild(bar);
+      requestAnimationFrame(() => {
+        try { box.style.setProperty('--stock-bar-h', Math.round(bar.getBoundingClientRect().height) + 'px'); } catch (e) { /* 忽略 */ }
+      });
+    } else {
+      box.classList.remove('has-toolbar');
+    }
 
     if (stockData.canImport && stockBatchMode === null && !$('#stock-file')) {
       const fi = el('input');
