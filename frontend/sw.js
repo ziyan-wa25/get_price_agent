@@ -3,10 +3,10 @@
 // - API（含 /api/ 的请求）与跨域请求（腾讯云 SCF）：一律直连，绝不缓存——登录态与库存/报价/应收/进项数据必须实时
 // - 其余同源 GET（页面导航 + 静态文件）：network-first——在线时拿最新版并顺带刷新缓存，断网时回退到缓存的界面壳
 // - 升级方式：改下方 CACHE 名称发布新版 SW，activate 时自动淘汰全部旧缓存
-const CACHE = 'xch-quote-pwa-v15';
+const CACHE = 'xch-quote-pwa-v16';
 const SHELL = [
-  './', './index.html', './app.js?v=20261120-fix37', './styles.css?v=20261120-fix37',
-  './config.js?v=20261120-fix37', './xlsx.full.min.js?v=20261120-fix37', './manifest.json', './icon-192.png', './icon-512.png',
+  './', './index.html', './app.js?v=20261120-fix38', './styles.css?v=20261120-fix38',
+  './config.js?v=20261120-fix38', './xlsx.full.min.js?v=20261120-fix38', './manifest.json', './icon-192.png', './icon-512.png',
 ];
 
 self.addEventListener('install', (e) => {
