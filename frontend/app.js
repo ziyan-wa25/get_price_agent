@@ -4352,7 +4352,8 @@
     };
     const ioQtyTryExpand = (td, ci, rowVals) => {
       const t = String(ioCellText(td)).trim();
-      const m = t.match(/^(\d{1,4})\*$/);
+      // 半角 * / 全角 ＊ / 乘号 × 都算拆分标记（中文输入法下常打出全角）
+      const m = t.match(/^(\d{1,4})\s*[*＊×]\s*$/);
       if (!m) { ioQtyClearCheck(td); return; }
       const x = parseInt(m[1], 10);
       if (x > 200) {
@@ -4362,7 +4363,15 @@
         return;
       }
       td.textContent = x + '/1';
-      td.dispatchEvent(new Event('input', { bubbles: true })); // 走 commit：rowVals 更新 + 本行日期自动生成
+      td.dispatchEvent(new Event('input', { bubbles: true })); // 走 commit：rowVals 更新
+      // 数量列不在 contentCis：若该行还没填其他内容，日期会被 afterEdit 清掉——这里补回当天日期
+      {
+        const tr0 = td.closest('tr');
+        if (dateCi >= 0 && !String(rowVals[dateCi] == null ? '' : rowVals[dateCi]).trim()) {
+          rowVals[dateCi] = todayStr;
+          if (tr0) tr0.children[dateCi].textContent = todayStr;
+        }
+      }
       const tr = td.closest('tr');
       const tbody = tr.parentElement;
       const grp = [td];
