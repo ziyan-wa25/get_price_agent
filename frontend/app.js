@@ -4243,18 +4243,20 @@
       base[ci] = text;
       ioEdit.dirty.set(absIdx, base);
     };
-    // 编辑单元格：日期列点开原生日历；物流单号的「备注」列点开人名名单；其余直接可输入
-    // afterEdit：空白行用——内容变更后的联动钩子（内容出现→自动生成日期；内容全清→自动清掉日期，行变回空行不会被提交）
     // 取格值用 innerText（保留 Shift+Enter 格内换行）；jsdom 无 innerText 时回退 textContent
     const ioCellText = (td) => {
       const t = typeof td.innerText === 'string' ? td.innerText : td.textContent;
       return String(t == null ? '' : t).replace(/\s+$/, '');
     };
-    const editAttachCell = (td, h, ci, absIdx, rowVals, afterEdit) => {
+    // 编辑单元格：日期列点开原生日历；物流单号的「备注」列点开人名名单；其余直接可输入
+    // afterEdit：空白行用——内容变更后的联动钩子（内容出现→自动生成日期；内容全清→自动清掉日期，行变回空行不会被提交）
+    // onQtyStar：数量格专用（仅新行）——填写「10*」触发拆分 10/1…10/10，组内任一格清空则整组清空
+    const editAttachCell = (td, h, ci, absIdx, rowVals, afterEdit, onQtyStar) => {
       const hStr = String(h || '');
       const commit = () => {
         if (rowVals) rowVals[ci] = ioCellText(td); else editMarkDirty(absIdx, ci, ioCellText(td));
         if (afterEdit) afterEdit();
+        if (onQtyStar) onQtyStar();
       };
       if (/日期|时间/.test(hStr)) {
         td.classList.add('io-date-cell');
@@ -4307,11 +4309,82 @@
             rowVals[dateCi] = todayStr;
             tds[dateCi].textContent = todayStr;
           }
-        });
+        }, /数量|件数|合计/.test(String(h)) ? () => ioQtyTryExpand(td, ci, rowVals) : null);
         tr.appendChild(td);
       });
       tr._ioNewVals = rowVals;
       return tr;
+    };
+
+    // ---- 数量拆分（扫码/批量录入提效）：新行数量格填「10*」→ 本行变 10/1 并自动补 9 行（10/2…10/10）。
+    // 组内任何一格的数量被清空 → 整组数量全部清空（各行随之回空行，可正常删除，不会出现删不掉的行）。
+    // 纯数字仍是普通数量；一次最多拆 200 行。组关系只在本次编辑会话内有效，保存后就是普通文本。
+    let ioRenumbering = false; // 重编号期间暂停重排（防止 dispatch input 递归触发）
+    const ioRenumberNewRows = (tbody) => {
+      if (seqIdx < 0 || ioRenumbering) return;
+      ioRenumbering = true;
+      try {
+        let n = 1;
+        tbody.querySelectorAll('tr.io-new-row').forEach((r) => {
+          const v = r._ioNewVals;
+          if (!v) return;
+          if (String(v[seqIdx] == null ? '' : v[seqIdx]).trim() !== '' || n === 1) {
+            v[seqIdx] = String(n);
+            r.children[seqIdx].textContent = String(n);
+            n++;
+          }
+        });
+      } finally { ioRenumbering = false; }
+    };
+    const ioQtyClearCheck = (td) => {
+      const t = String(ioCellText(td)).trim();
+      if (t !== '' || !td._qtyGroup) return;
+      const grp = td._qtyGroup;
+      td._qtyGroup = null;
+      grp.forEach((c) => {
+        if (c === td) return;
+        c._qtyGroup = null;
+        if (String(ioCellText(c)).trim() !== '') {
+          c.textContent = '';
+          c.dispatchEvent(new Event('input', { bubbles: true })); // 走 commit：清值 + 清该行日期 → 行回空行
+        }
+      });
+    };
+    const ioQtyTryExpand = (td, ci, rowVals) => {
+      const t = String(ioCellText(td)).trim();
+      const m = t.match(/^(\d{1,4})\*$/);
+      if (!m) { ioQtyClearCheck(td); return; }
+      const x = parseInt(m[1], 10);
+      if (x > 200) {
+        alert('一次最多拆 200 行，请分批填写（例如先 200* 再 150*）');
+        td.textContent = '';
+        rowVals[ci] = '';
+        return;
+      }
+      td.textContent = x + '/1';
+      td.dispatchEvent(new Event('input', { bubbles: true })); // 走 commit：rowVals 更新 + 本行日期自动生成
+      const tr = td.closest('tr');
+      const tbody = tr.parentElement;
+      const grp = [td];
+      td._qtyGroup = grp;
+      const curSeq = seqIdx >= 0 ? Number(String(rowVals[seqIdx] == null ? '' : rowVals[seqIdx]).trim()) : NaN;
+      let prevTr = tr;
+      for (let i = 2; i <= x; i++) {
+        const ntr = ioBuildBlankRow(seqIdx >= 0 && Number.isFinite(curSeq) ? curSeq + (i - 1) : null);
+        const qtd = ntr.children[ci];
+        qtd._qtyGroup = grp;
+        grp.push(qtd);
+        tbody.insertBefore(ntr, prevTr.nextSibling);
+        prevTr = ntr;
+        qtd.textContent = x + '/' + i;
+        qtd.dispatchEvent(new Event('input', { bubbles: true })); // 走 commit：rowVals 更新
+        // 数量列不在 contentCis（普通数量行不算内容），但拆分行需要日期：手动补当天日期
+        if (dateCi >= 0 && !String(ntr._ioNewVals[dateCi] == null ? '' : ntr._ioNewVals[dateCi]).trim()) {
+          ntr._ioNewVals[dateCi] = todayStr;
+          ntr.children[dateCi].textContent = todayStr;
+        }
+      }
+      ioRenumberNewRows(tbody); // 拆分行插在中间：按 DOM 顺序重排全部新行序号，保证连续
     };
     let seqIdx = -1;
     let nextSeqNo = null;
