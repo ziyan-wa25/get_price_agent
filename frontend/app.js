@@ -3044,6 +3044,7 @@
   }
 
   function showPage(p) {
+    curPage = p; // 轮询判断当前页
     $('#chat-page').classList.toggle('hidden', p !== 'chat');
     $('#price-page').classList.toggle('hidden', p !== 'price');
     $('#stock-page').classList.toggle('hidden', p !== 'stock');
@@ -3078,6 +3079,47 @@
     if (p === 'todo') loadTodos();
     if (p === 'pay') loadPayments();
     if (p === 'io') loadIo();
+  }
+
+  let curPage = ''; // 当前页面（io 轮询用：只在出入库页激活时轮询版本）
+
+  // 出入库浏览端自动同步：每 30 秒拉一次元数据（轻量），当前分表数据版本变化时自动重拉行并提示。
+  // 一个人保存后，所有人的表格自动对齐到最新数据，不再需要手动刷新。
+  setInterval(async () => {
+    if (curPage !== 'io' || !ioData || ioEdit || ioSaving || $('#modal-mask') && !$('#modal-mask').classList.contains('hidden')) return; // 弹窗打开时不动
+    const sheetId = ioSheetId;
+    if (!sheetId) return;
+    let d = null;
+    try { d = await api('GET', '/api/io'); } catch (e) { return; }
+    if (!d || !d.books) return;
+    ioData = d;
+    let cur = null;
+    (d.books || []).forEach((b) => {
+      (b.sheets || []).forEach((s) => { if (s.id === sheetId) cur = s; });
+    });
+    if (!cur) return;
+    const old = ioPollVer.get(sheetId);
+    ioPollVer.set(sheetId, cur.version || 0);
+    if (old != null && (cur.version || 0) !== old) {
+      ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' };
+      ioSheetId = sheetId;
+      await loadIo(); // 重拉行数据
+      ioToast('🔄 表格已更新（' + (cur.editLock && cur.editLock.user ? '有人保存了修改' : '数据有变化') + '），已同步到最新');
+    }
+  }, 30000);
+  let ioPollVer = new Map(); // sheetId → 上次见到的数据版本
+
+  function ioToast(msg) { // 轻提示：不打断操作，2.6 秒自动消失
+    let t = $('#io-toast');
+    if (!t) {
+      t = el('div', 'io-toast');
+      t.id = 'io-toast';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2600);
   }
 
   // ---------- 业绩报表（admin 导入「经营分析」表；业务员只看自己的行；月到款考核含提成与季度加和） ----------
@@ -3695,7 +3737,55 @@
   let ioBookId = '';
   let ioSheetId = '';
   let ioWin = { sheetId: '', from: 0, total: 0, rows: [], loading: false, capReached: false, err: '' }; // 当前分表的行窗口（懒加载）
-  let ioEdit = null; // 编辑模式：{ dirty: Map(绝对行号→values) }
+  let ioEdit = null; // 编辑模式：{ dirty: Map(绝对行号→values), hasLock, baseVersion }
+
+  // ---- 分表编辑锁：心跳续期 / 释放 / 强制退出 ----
+  let ioLockTimer = null;
+  function stopIoLockHeartbeat() {
+    if (ioLockTimer) { clearInterval(ioLockTimer); ioLockTimer = null; }
+  }
+  function startIoLockHeartbeat(sheet) {
+    stopIoLockHeartbeat();
+    ioLockTimer = setInterval(async () => {
+      if (!ioEdit || !ioEdit.hasLock) { stopIoLockHeartbeat(); return; }
+      try {
+        const r = await api('POST', '/api/io-item', { action: 'lock', sheetId: sheet.id, op: 'heartbeat' });
+        if (ioEdit && typeof r.version === 'number') ioEdit.curVersion = r.version; // 心跳顺带带回最新版本
+      } catch (e) {
+        if (e && e.message && (e.message.includes('失效') || e.message.includes('正在被'))) {
+          stopIoLockHeartbeat();
+          ioEdit = null;
+          renderIoPage();
+          alert('编辑权已失效：' + e.message);
+        }
+        // 网络抖动忽略：锁 10 分钟才过期，下个心跳会继续
+      }
+    }, 60000);
+  }
+  function ioReleaseLock(sheetId) { // 后台释放（失败静默：锁 10 分钟自动过期兜底）
+    api('POST', '/api/io-item', { action: 'lock', sheetId, op: 'release' }).catch(() => {});
+  }
+  function exitIoEdit(confirmFirst) { // 取消/离开编辑：释放锁并回浏览模式
+    if (confirmFirst && ioEdit && ioEdit.dirty && ioEdit.dirty.size && !confirm('有未保存的修改，确定放弃并退出？')) return;
+    const sheetId = ioEdit && ioEdit.sheetId;
+    stopIoLockHeartbeat();
+    ioEdit = null;
+    if (sheetId) ioReleaseLock(sheetId);
+    renderIoPage();
+  }
+  // 页面直接关闭时用 keepalive 请求释放锁（无 keepalive 时锁也会 10 分钟自动过期）
+  window.addEventListener('beforeunload', () => {
+    if (!ioEdit || !ioEdit.hasLock || !ioEdit.sheetId) return;
+    try {
+      const t = impToken || token;
+      fetch(API + '/api/io-item', {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+        body: JSON.stringify({ action: 'lock', sheetId: ioEdit.sheetId, op: 'release' }),
+      }).catch(() => {});
+    } catch (e) { /* 忽略 */ }
+  });
   let ioSaving = null; // 保存中标记：{ sheetId, pending }（乐观保存：界面已回阅读态，云端提交进行中）
 
   // 行窗口持久缓存：已加载过的分表再次点开秒开，不再重新拉取（localStorage，超限淘汰最旧）
@@ -4013,8 +4103,8 @@
         const v = tr._ioNewVals || [];
         return v.some((c, ci) => { const h = (sheet.columns || [])[ci] || ''; return !/序号|第.{0,4}个/.test(h) && String(c || '').trim() !== ''; });
       }) : false;
-      if (!ioEdit.dirty.size && !newHas) { ioEdit = null; return true; }
-      if (confirm('有未保存的修改，确定放弃并切换？')) { ioEdit = null; return true; }
+      if (!ioEdit.dirty.size && !newHas) { const sid = ioEdit.sheetId; ioEdit = null; stopIoLockHeartbeat(); if (sid) ioReleaseLock(sid); return true; }
+      if (confirm('有未保存的修改，确定放弃并切换？')) { const sid = ioEdit.sheetId; ioEdit = null; stopIoLockHeartbeat(); if (sid) ioReleaseLock(sid); return true; }
       return false;
     };
     const bar = el('div', 'stock-toolbar');
@@ -4057,22 +4147,37 @@
       bExp.onclick = () => exportIoBook(book);
       bar.appendChild(bExp);
     }
-    // 右上角「开始修改」：进入编辑模式 → 直接点单元格改、表格下方空白行直接填新行 → 保存统一提交
+    // 右上角「开始修改」：进入编辑模式 → 直接点单元格改、表格下方空白行直接填新行 → 保存统一提交。
+    // 进入前先取得分表编辑锁：同一时间只允许一个人编辑（他人进入会提示谁在编辑）；保存/取消后释放并广播数据版本。
     if (book && sheet && sheet.canEdit) {
       if (ioSaving && ioSaving.sheetId === sheet.id) {
         bar.appendChild(el('span', 'io-saving', '💾 保存中…（' + ioSaving.pending + ' 行）'));
       } else if (!ioEdit || ioEdit.sheetId !== sheet.id) {
         const bEdit = el('button', 'io-edit-btn', '✏️ 开始修改');
-        bEdit.onclick = () => { ioEdit = { sheetId: sheet.id, dirty: new Map() }; renderIoPage(); };
+        bEdit.onclick = async () => {
+          try {
+            const r = await api('POST', '/api/io-item', { action: 'lock', sheetId: sheet.id, op: 'acquire' });
+            ioEdit = { sheetId: sheet.id, dirty: new Map(), newRows: [], hasLock: true, baseVersion: (r && r.version) != null ? r.version : (sheet.version || 0) };
+            startIoLockHeartbeat(sheet);
+            renderIoPage();
+          } catch (e) {
+            alert(e.message);
+            refreshIo(); // 拿一下最新锁状态（显示谁在编辑）
+          }
+        };
         bar.appendChild(bEdit);
       } else {
         const bSave = el('button', 'primary io-edit-btn', '💾 保存');
         bSave.onclick = () => saveIoEdits(sheet);
         const bCancel = el('button', '', '✖ 取消');
-        bCancel.onclick = () => { ioEdit = null; renderIoPage(); };
+        bCancel.onclick = () => { exitIoEdit(false); };
         bar.appendChild(bSave);
         bar.appendChild(bCancel);
       }
+    }
+    // 编辑锁提示：有人在编辑该分表时，浏览端随时可见（防止不知道表格正在被改）
+    if (book && sheet && sheet.editLock && sheet.editLock.user && sheet.editLock.user !== me.username && (!ioEdit || ioEdit.sheetId !== sheet.id)) {
+      bar.appendChild(el('span', 'io-saving', '🔒 ' + sheet.editLock.user + ' 正在编辑该分表…'));
     }
     box.appendChild(bar);
 
@@ -4365,7 +4470,7 @@
         if (/序号|第.{0,4}个/.test(h)) return false; // 纯空白行（仅自动序号）不提交
         return String(c || '').trim() !== '';
       }));
-    if (!updates.length && !newRows.length) { ioEdit = null; renderIoPage(); return; }
+    if (!updates.length && !newRows.length) { const sid = ioEdit.sheetId; ioEdit = null; stopIoLockHeartbeat(); if (sid) ioReleaseLock(sid); renderIoPage(); return; }
     // 快照：失败时回滚窗口并带着原改动回到编辑模式
     const snapshot = {
       dirty: new Map(ioEdit.dirty),
@@ -4373,6 +4478,7 @@
       rows: ioWin.rows.slice(),
       from: ioWin.from,
       total: ioWin.total,
+      baseVersion: ioEdit.baseVersion,
     };
     // 乐观落位：已改行写回窗口；新行进窗口尾部
     snapshot.dirty.forEach((values, idx) => {
@@ -4393,9 +4499,24 @@
       if (updates.length) await api('POST', '/api/io-item', { action: 'update-rows', sheetId: sheet.id, updates });
       if (newRows.length) await api('POST', '/api/io-item', { action: 'append-rows', sheetId: sheet.id, rows: newRows });
       ioSaving = null;
+      stopIoLockHeartbeat();
+      ioReleaseLock(sheet.id); // 保存完成：释放编辑锁（其他人现在可以进入编辑）
+      refreshIo(); // 重拉元数据/版本并刷新当前视图：所有人的表格对齐到最新数据
       renderIoPage(); // 「保存中…」标记消失（行内容与云端一致，无需重拉）
     } catch (e) {
       ioSaving = null;
+      if (e && e.message && (e.message.includes('正在被') || e.message.includes('失效'))) {
+        // 锁冲突：保存被拒绝——改动保留但放弃编辑态，提示用户重新进入
+        stopIoLockHeartbeat();
+        ioEdit = null;
+        ioWin.rows = snapshot.rows;
+        ioWin.from = snapshot.from;
+        ioWin.total = snapshot.total;
+        cacheIoWindow();
+        refreshIo();
+        alert('保存未生效：' + e.message + '\n请稍后重新点「开始修改」，再重新录入这次改动。');
+        return;
+      }
       ioWin.rows = snapshot.rows;
       ioWin.from = snapshot.from;
       ioWin.total = snapshot.total;
@@ -4403,7 +4524,8 @@
         const s = (b.sheets || []).find((x) => x.id === sheet.id);
         if (s) s.rowCount = snapshot.total;
       });
-      ioEdit = { sheetId: sheet.id, dirty: snapshot.dirty, newRows: [] };
+      ioEdit = { sheetId: sheet.id, dirty: snapshot.dirty, newRows: [], hasLock: true, baseVersion: snapshot.baseVersion };
+      startIoLockHeartbeat(sheet); // 回编辑模式：恢复心跳（锁仍持有）
       cacheIoWindow();
       renderIoPage();
       alert('保存失败：' + e.message + '\n已回到编辑模式，改动原样保留——可直接再点「💾 保存」重试。');
