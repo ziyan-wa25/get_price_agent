@@ -1203,10 +1203,13 @@
   }
 
   function fmtQty(n) { const x = Number(n) || 0; return Number.isInteger(x) ? x.toLocaleString('zh-CN') : String(x); }
-  function fmtCost(n) { const x = Number(n) || 0; return x.toLocaleString('zh-CN', { maximumFractionDigits: 4 }); }
+  function fmtCost(n) { const x = Number(n) || 0; return x.toLocaleString('zh-CN', { maximumFractionDigits: 4 }); } // 千分位分隔（如 1,234.5）
   function fmtSale(p) {
     const s = String(p == null ? '' : p).trim();
-    return s === '' ? '—' : s; // 价格列不带人民币符号，原样显示
+    if (s === '') return '—'; // 价格列不带人民币符号；数字统一千分位分隔
+    const n = Number(s);
+    if (Number.isFinite(n)) return n.toLocaleString('zh-CN', { maximumFractionDigits: 4 });
+    return s; // 非数字内容原样显示
   }
 
   function renderStockPage() {
@@ -1380,42 +1383,30 @@
       tr.appendChild(td);
       tbody.appendChild(tr);
     }
-    // 库存合计条（仅 admin）：放在搜索框正下方（页顶固定区，滚动表格时一直可见）。
-    // 「合计」字样在前；库存量=Σ库存量；成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价（负数/非数字行忽略）。
-    {
-      const ptb = document.querySelector('#stock-page .price-toolbar');
-      let totalBar = $('#stock-total-bar');
-      if (ptb && !totalBar) {
-        totalBar = el('div', 'stock-total-bar');
-        totalBar.id = 'stock-total-bar';
-        ptb.appendChild(totalBar);
-      }
-      const showTotal = plainView && me && me.role === 'admin' && stockData.canSeeCost && stockData.canSeePrice && items.length;
-      if (totalBar) {
-        totalBar.innerHTML = '';
-        totalBar.style.display = showTotal ? '' : 'none';
-      }
-      if (showTotal && totalBar) {
-        let costSum = 0;
-        let priceSum = 0;
-        let qtySum = 0;
-        items.forEach((it) => {
-          const q = Number(it.qty);
-          const c = Number(it.cost);
-          const p = Number(it.price);
-          if (Number.isFinite(q)) qtySum += q;
-          if (Number.isFinite(q) && Number.isFinite(c) && c >= 0) costSum += q * c;
-          if (Number.isFinite(q) && Number.isFinite(p) && p >= 0) priceSum += q * p;
-        });
-        totalBar.appendChild(el('span', 'stock-total-label', '合计'));
-        totalBar.appendChild(el('span', 'stock-total-item', '库存量 ' + fmtQty(Math.round(qtySum * 1000) / 1000)));
-        const cEl = el('span', 'stock-total-item', '成本 ' + fmtCost(Math.round(costSum)));
-        cEl.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）';
-        totalBar.appendChild(cEl);
-        const pEl = el('span', 'stock-total-item', '售价 ' + fmtSale(String(Math.round(priceSum))));
-        pEl.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）';
-        totalBar.appendChild(pEl);
-      }
+    // 库存合计（仅 admin）：追加到工具栏「无库存产品统计」按钮右侧（工具栏悬浮 → 合计随其常驻可见）。
+    // 库存量=Σ库存量；成本总和=Σ库存量×成本价；售价总和=Σ库存量×售价（负数/非数字行忽略）。
+    if (plainView && me && me.role === 'admin' && stockData.canSeeCost && stockData.canSeePrice && items.length && bar.children.length) {
+      let costSum = 0;
+      let priceSum = 0;
+      let qtySum = 0;
+      items.forEach((it) => {
+        const q = Number(it.qty);
+        const c = Number(it.cost);
+        const p = Number(it.price);
+        if (Number.isFinite(q)) qtySum += q;
+        if (Number.isFinite(q) && Number.isFinite(c) && c >= 0) costSum += q * c;
+        if (Number.isFinite(q) && Number.isFinite(p) && p >= 0) priceSum += q * p;
+      });
+      const grp = el('span', 'stock-total-inline');
+      grp.appendChild(el('span', 'stock-total-label', '合计'));
+      grp.appendChild(el('span', 'stock-total-item', '库存量 ' + fmtQty(Math.round(qtySum * 1000) / 1000)));
+      const cEl = el('span', 'stock-total-item', '成本 ' + fmtCost(Math.round(costSum)));
+      cEl.title = '成本总和（Σ 库存量×成本价，取整；成本价为负或非数字的行已忽略）';
+      grp.appendChild(cEl);
+      const pEl = el('span', 'stock-total-item', '售价 ' + fmtCost(Math.round(priceSum)));
+      pEl.title = '售价总和（Σ 库存量×售价，取整；售价为负或非数字的行已忽略）';
+      grp.appendChild(pEl);
+      bar.appendChild(grp);
     }
     tbl.appendChild(tbody);
     box.appendChild(tbl);
