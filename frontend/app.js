@@ -3873,19 +3873,72 @@
         names.forEach((name) => {
           const ws = wb.Sheets[name];
           if (!ws) return;
-          const grid = XL.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+          let grid = XL.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+          // 合并单元格展开：合并区域内每一格都填上左上角（首格）的值。
+          // 否则「外地」这类跨列合并表头只有第一格有值、其余格为空 → 尾部空表头列被丢弃 → 地址列数据丢失。
+          const merges = ws['!merges'] || [];
+          grid = grid.map((r) => (r || []).slice());
+          merges.forEach((m) => {
+            if (!m || m.s == null || m.e == null) return;
+            const fill = String(grid[m.s.r] && grid[m.s.r][m.s.c] != null ? grid[m.s.r][m.s.c] : '');
+            for (let r = m.s.r; r <= m.e.r; r++) {
+              if (!grid[r]) grid[r] = [];
+              for (let c = m.s.c; c <= m.e.c; c++) {
+                if (grid[r][c] === '' || grid[r][c] == null) grid[r][c] = fill;
+              }
+            }
+          });
           // 表头 = 第一个有内容的行；其后为数据行（与系统解析规则一致）
           let header = null;
           let startIdx = -1;
+          let headerRow = -1;
           for (let i = 0; i < grid.length; i++) {
             const cells = (grid[i] || []).map(ioCellStr);
-            if (cells.some((c) => c !== '')) { header = cells; startIdx = i + 1; break; }
+            if (cells.some((c) => c !== '')) { header = cells; startIdx = i + 1; headerRow = i; break; }
           }
           if (!header) return;
-          while (header.length && header[header.length - 1] === '') header.pop();
-          if (!header.length) return;
+          // 空表头列兜底：左侧列有名字的沿用「左名(2)」，否则「(第N列)」——保证列数与数据一致，不再丢列
+          header = header.map((h, i) => {
+            if (h !== '') return h;
+            const prev = header[i - 1];
+            if (prev && prev !== '') return prev + '(' + (i + 1) + ')';
+            return '(第' + (i + 1) + '列)';
+          });
+          // 双行表头识别：表头行存在跨列合并（大类）且下一行对应列全是文本子名（如 外地→名称/地址）时，
+          // 列名合并为「大类-子名」，数据从第三行开始（该行是子表头，不是数据）
+          const hasColMerge = merges.some((m) => m && m.s && m.e && m.s.r === headerRow && m.e.r === headerRow && m.e.c > m.s.c);
+          if (hasColMerge && startIdx < grid.length) {
+            const nxt = (grid[startIdx] || []).map(ioCellStr);
+            const overlapCols = [];
+            merges.forEach((m) => {
+              if (m && m.s && m.e && m.s.r === headerRow && m.e.r === headerRow) {
+                for (let c = m.s.c; c <= m.e.c; c++) overlapCols.push(c);
+              }
+            });
+            const isSubHead = overlapCols.length > 0 && overlapCols.every((c) => {
+              const t = String(nxt[c] == null ? '' : nxt[c]).trim();
+              return t !== '' && !/^-?\d+(\.\d+)?$/.test(t); // 全部非空且不是纯数字（纯数字大概率是数据行）
+            });
+            if (isSubHead) {
+              header = header.map((h, i) => {
+                const sub = String(nxt[i] == null ? '' : nxt[i]).trim();
+                return sub ? h + '-' + sub : h; // 子表头空列保留大类名
+              });
+              startIdx += 1;
+            }
+          }
+          // 计算各列是否真的有数据，再裁剪尾部：只有整列无数据的空列才去掉（避免丢「外地(2)」这类地址列）
+          const colsAll = header.length;
+          let lastUsed = -1;
+          for (let i = startIdx; i < grid.length && lastUsed < colsAll - 1; i++) {
+            const raw = grid[i] || [];
+            for (let j = 0; j < colsAll; j++) {
+              if (String(raw[j] != null ? raw[j] : '') !== '') { if (j > lastUsed) lastUsed = j; }
+            }
+          }
+          const cols = lastUsed + 1;
+          header = header.slice(0, cols);
           if (header.length > 60) header = header.slice(0, 60);
-          const cols = header.length;
           const rows = [];
           for (let i = startIdx; i < grid.length; i++) {
             const raw = (grid[i] || []).map(ioCellStr);
